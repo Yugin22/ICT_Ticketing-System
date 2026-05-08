@@ -93,34 +93,58 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let channel: ReturnType<typeof supabase.channel> | null = null;
+    let isMounted = true;
 
     const setup = async () => {
-      const { data } = await supabase.auth.getUser();
-      if (!data.user) { router.replace("/login"); return; }
-      await initUser();
-      
-      const channelName = `dashboard-changes-${Date.now()}`;
-      channel = supabase
-        .channel(channelName)
-        .on("postgres_changes", { event: "*", schema: "public", table: "tickets" }, () => {
-          initUser();
-        })
-        .on("postgres_changes", { event: "INSERT", schema: "public", table: "announcements" }, () => {
-          fetchLatestAnnouncements();
-        })
-        .subscribe();
+      try {
+        const { data, error } = await supabase.auth.getUser();
+        if (!isMounted) return;
+        
+        if (error || !data.user) { 
+          router.replace("/login"); 
+          return; 
+        }
+        
+        // Pass the already fetched user to initUser to avoid redundant getUser() calls
+        await initUser(data.user);
+        
+        const channelName = `dashboard-changes-${Date.now()}`;
+        channel = supabase
+          .channel(channelName)
+          .on("postgres_changes", { event: "*", schema: "public", table: "tickets" }, () => {
+            // Passing null will make initUser fetch the user again if needed, 
+            // but for real-time updates it's usually fine.
+            initUser(); 
+          })
+          .on("postgres_changes", { event: "INSERT", schema: "public", table: "announcements" }, () => {
+            fetchLatestAnnouncements();
+          })
+          .subscribe();
+      } catch (err) {
+        console.error("Setup error:", err);
+      }
     };
 
     setup();
-    return () => { if (channel) supabase.removeChannel(channel); };
+    return () => { 
+      isMounted = false;
+      if (channel) supabase.removeChannel(channel); 
+    };
   }, []);
 
-  const initUser = async () => {
+  const initUser = async (existingUser?: any) => {
     try {
       setLoading(true);
-      const { data, error } = await supabase.auth.getUser();
-      if (error || !data.user) { router.replace("/login"); return; }
-      const currentUser = data.user;
+      
+      let currentUser = existingUser;
+      if (!currentUser) {
+        const { data, error } = await supabase.auth.getUser();
+        if (error || !data.user) { 
+          if (!existingUser) router.replace("/login"); 
+          return; 
+        }
+        currentUser = data.user;
+      }
 
       // Fetch from public.profiles table
       let { data: dbProfile, error: profileError } = await supabase

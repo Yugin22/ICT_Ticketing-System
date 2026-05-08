@@ -40,21 +40,39 @@ export default function AnnouncementsPage() {
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   useEffect(() => {
-    checkUser();
-    fetchAnnouncements();
-  }, []);
+    let isMounted = true;
+    const checkUserAndRole = async () => {
+      try {
+        const { data } = await supabase.auth.getUser();
+        if (!isMounted) return;
 
-  const checkUser = async () => {
-    const { data } = await supabase.auth.getUser();
-    if (!data.user) {
-      router.push("/login");
-      return;
-    }
-    const { data: profile } = await supabase.from("profiles").select("role").eq("id", data.user.id).maybeSingle();
-    if (profile?.role !== 'admin') {
-      router.push("/dashboard");
-    }
-  };
+        if (!data.user) {
+          router.push("/login");
+          return;
+        }
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", data.user.id)
+          .maybeSingle();
+
+        if (!isMounted) return;
+
+        if (profile?.role !== 'admin') {
+          router.push("/dashboard");
+        }
+      } catch (err) {
+        console.error("Auth check error:", err);
+      }
+    };
+
+    checkUserAndRole();
+    fetchAnnouncements();
+    return () => {
+      isMounted = false;
+    };
+  }, [router]);
 
   const fetchAnnouncements = async () => {
     try {

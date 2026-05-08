@@ -40,46 +40,54 @@ export default function TicketsFormPage() {
     const requestType = "Incident"; // Automatically Incident and not editable
 
     useEffect(() => {
-        initPage();
-    }, []);
+        let isMounted = true;
+        const initPage = async () => {
+            try {
+                setLoading(true);
+                const { data, error } = await supabase.auth.getUser();
+                if (!isMounted) return;
 
-    const initPage = async () => {
-        try {
-            setLoading(true);
-            const { data, error } = await supabase.auth.getUser();
-            if (error || !data.user) {
-                router.replace("/login");
-                return;
-            }
-
-            if (data.user) {
-                setUserId(data.user.id);
-
-                // Fetch Profile for header
-                const { data: profile } = await supabase
-                    .from("profiles")
-                    .select("full_name, email")
-                    .eq("id", data.user.id)
-                    .maybeSingle();
-
-                if (profile) {
-                    setUser(profile);
-                } else {
-                    // Fallback to auth metadata if profile doesn't exist yet
-                    setUser({
-                        full_name: data.user.user_metadata?.full_name || data.user.email?.split("@")[0] || "User",
-                        email: data.user.email || ""
-                    });
+                if (error || !data.user) {
+                    router.replace("/login");
+                    return;
                 }
 
-                await fetchUserTickets(data.user.id);
+                if (data.user) {
+                    setUserId(data.user.id);
+
+                    // Fetch Profile for header
+                    const { data: profile } = await supabase
+                        .from("profiles")
+                        .select("full_name, email")
+                        .eq("id", data.user.id)
+                        .maybeSingle();
+
+                    if (!isMounted) return;
+
+                    if (profile) {
+                        setUser(profile);
+                    } else {
+                        // Fallback to auth metadata if profile doesn't exist yet
+                        setUser({
+                            full_name: data.user.user_metadata?.full_name || data.user.email?.split("@")[0] || "User",
+                            email: data.user.email || ""
+                        });
+                    }
+
+                    await fetchUserTickets(data.user.id);
+                }
+            } catch (err) {
+                console.error(err);
+            } finally {
+                if (isMounted) setLoading(false);
             }
-        } catch (err) {
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
-    };
+        };
+
+        initPage();
+        return () => {
+            isMounted = false;
+        };
+    }, [router]);
 
     const fetchUserTickets = async (uid: string) => {
         const { data, error } = await supabase

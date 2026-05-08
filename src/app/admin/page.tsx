@@ -111,24 +111,36 @@ export default function AdminDashboard() {
   /* ---------------- AUTH GUARD ---------------- */
 
   useEffect(() => {
+    let isCurrent = true;
     const checkUserAndRole = async () => {
-      const { data: authData } = await supabase.auth.getUser();
-      if (!authData.user) {
-        router.push("/login");
-        return;
-      }
+      try {
+        const { data: authData } = await supabase.auth.getUser();
+        if (!isCurrent) return;
 
-      const { data: profileData } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", authData.user.id)
-        .maybeSingle();
+        if (!authData.user) {
+          router.push("/login");
+          return;
+        }
 
-      if (profileData?.role !== "admin") {
-        router.push("/dashboard");
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("id", authData.user.id)
+          .maybeSingle();
+
+        if (!isCurrent) return;
+
+        if (profileData?.role !== "admin") {
+          router.push("/dashboard");
+        }
+      } catch (err) {
+        console.error("Auth check error:", err);
       }
     };
     checkUserAndRole();
+    return () => {
+      isCurrent = false;
+    };
   }, [router]);
 
   /* ---------------- FETCH TICKETS ---------------- */
