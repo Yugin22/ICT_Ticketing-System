@@ -92,6 +92,7 @@ export default function AllTicketsAdmin() {
 
   // Multi-select
   const [selectedTickets, setSelectedTickets] = useState<Set<string | number>>(new Set());
+  const [showBulkAssign, setShowBulkAssign] = useState(false);
 
   /* ---------------- AUTH GUARD ---------------- */
 
@@ -138,6 +139,18 @@ export default function AllTicketsAdmin() {
   const fetchTickets = async () => {
     try {
       setRefreshing(true);
+
+      // 0. Auto-close resolved tickets older than 3 days
+      // We use created_at as a proxy for age if updated_at is unavailable, but ideally we check updated_at
+      const threeDaysAgo = new Date();
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+      
+      await supabase
+        .from("tickets")
+        .update({ status: "Closed" })
+        .eq("status", "Resolved")
+        .lte("created_at", threeDaysAgo.toISOString());
+
       // 1. Fetch tickets basic data
       const { data: ticketsData, error: ticketsError } = await supabase
         .from("tickets")
@@ -290,24 +303,6 @@ export default function AllTicketsAdmin() {
     }
   };
 
-  const bulkReopen = async () => {
-    if (selectedTickets.size === 0) return;
-    try {
-      setRefreshing(true);
-      const { error } = await supabase
-        .from("tickets")
-        .update({ status: "Open" })
-        .in("id", Array.from(selectedTickets));
-
-      if (!error) {
-        await fetchTickets();
-        setSelectedTickets(new Set());
-      }
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
   const handleAssignTicket = async (ticketId: string | number, staffId: string) => {
     try {
       setRefreshing(true);
@@ -338,6 +333,9 @@ export default function AllTicketsAdmin() {
   };
 
   const handleUpdateStatus = async (ticketId: string | number, newStatus: string) => {
+    const ticket = tickets.find((t) => t.id === ticketId);
+    if (ticket?.status === "Closed") return; // Once closed, cannot be reopened or changed
+
     try {
       setRefreshing(true);
       const { error } = await supabase
@@ -660,23 +658,7 @@ export default function AllTicketsAdmin() {
                         )}
                       </td>
                       <td className="pr-8 py-5 text-right flex items-center justify-end gap-2">
-                        <div className="relative group/menu">
-                          <button className="p-2 rounded-xl bg-[#f0f3f8] text-[#1a2744] hover:bg-[#1a2744] hover:text-white transition-all">
-                            <UserPlus size={16} />
-                          </button>
-                          <div className="absolute top-1/2 right-full mr-2 -translate-y-1/2 w-48 bg-white rounded-2xl shadow-2xl p-2 hidden group-hover/menu:block z-50 animate-fade-in-up border border-[#e8ecf2]">
-                            <p className="px-3 py-1.5 text-[9px] uppercase font-black tracking-widest text-[#8c9bba] border-b border-[#f0f3f8] mb-1">Quick Assign</p>
-                            {staff.map(s => (
-                              <button
-                                key={s.id}
-                                onClick={() => handleAssignTicket(t.id, s.id)}
-                                className="w-full text-left px-3 py-1.5 rounded-lg text-xs font-bold text-[#1a2744] hover:bg-[#f8f9fc] transition-colors"
-                              >
-                                {s.full_name}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
+                        {/* Quick Assign Removed */}
 
                         <button
                           onClick={() => {
@@ -689,21 +671,13 @@ export default function AllTicketsAdmin() {
                           <Trash2 size={16} />
                         </button>
 
-                        <button
-                          onClick={() => handleUpdateStatus(t.id, t.status === "Resolved" ? "Open" : "Resolved")}
-                          className={`p-2 rounded-xl transition-all ${t.status === "Resolved" ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-gray-100 text-gray-400 hover:text-emerald-500 hover:bg-emerald-50"}`}
-                          title={t.status === "Resolved" ? "Undo Resolve" : "Mark as Resolved"}
-                        >
-                          <CheckSquare size={16} />
-                        </button>
-
-                        {t.status === "Closed" && (
+                        {t.status !== "Closed" && (
                           <button
-                            onClick={() => handleUpdateStatus(t.id, "Open")}
-                            className="p-2 rounded-xl bg-orange-50 text-orange-500 hover:bg-orange-500 hover:text-white transition-all active:scale-90 border border-orange-100"
-                            title="Reopen Ticket"
+                            onClick={() => handleUpdateStatus(t.id, t.status === "Resolved" ? "Open" : "Resolved")}
+                            className={`p-2 rounded-xl transition-all ${t.status === "Resolved" ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-gray-100 text-gray-400 hover:text-emerald-500 hover:bg-emerald-50"}`}
+                            title={t.status === "Resolved" ? "Undo Resolve" : "Mark as Resolved"}
                           >
-                            <RefreshCcw size={16} />
+                            <CheckSquare size={16} />
                           </button>
                         )}
 
@@ -734,23 +708,28 @@ export default function AllTicketsAdmin() {
               </div>
 
               <div className="flex items-center gap-4">
-                <div className="relative group">
-                  <button className="flex items-center gap-2 px-6 py-2 rounded-xl bg-white/10 hover:bg-white text-xs font-bold transition-all hover:text-[#1a2744]">
+                <div className="relative">
+                  <button
+                    onClick={() => setShowBulkAssign(!showBulkAssign)}
+                    className="flex items-center gap-2 px-6 py-2 rounded-xl bg-white/10 hover:bg-white text-xs font-bold transition-all hover:text-[#1a2744]"
+                  >
                     <UserPlus size={16} />
                     Assign to...
                   </button>
-                  <div className="absolute bottom-full left-0 mb-2 w-56 bg-white rounded-2xl shadow-2xl p-2 hidden group-hover:block animate-fade-in-up">
-                    <p className="px-4 py-2 text-[10px] uppercase font-black tracking-widest text-[#8c9bba] border-b border-[#f0f3f8] mb-1">Select Technician</p>
-                    {staff.map(s => (
-                      <button
-                        key={s.id}
-                        onClick={() => bulkAssign(s.id)}
-                        className="w-full text-left px-4 py-2 rounded-xl text-xs font-bold text-[#1a2744] hover:bg-[#f8f9fc] transition-colors"
-                      >
-                        {s.full_name}
-                      </button>
-                    ))}
-                  </div>
+                  {showBulkAssign && (
+                    <div className="absolute bottom-full left-0 mb-2 w-56 bg-white rounded-2xl shadow-2xl p-2 animate-fade-in-up">
+                      <p className="px-4 py-2 text-[10px] uppercase font-black tracking-widest text-[#8c9bba] border-b border-[#f0f3f8] mb-1">Select Technician</p>
+                      {staff.map(s => (
+                        <button
+                          key={s.id}
+                          onClick={() => { bulkAssign(s.id); setShowBulkAssign(false); }}
+                          className="w-full text-left px-4 py-2 rounded-xl text-xs font-bold text-[#1a2744] hover:bg-[#f8f9fc] transition-colors"
+                        >
+                          {s.full_name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <button
                   onClick={bulkClose}
@@ -760,13 +739,6 @@ export default function AllTicketsAdmin() {
                   Close Selected
                 </button>
 
-                <button
-                  onClick={bulkReopen}
-                  className="flex items-center gap-2 px-6 py-2 rounded-xl bg-orange-500 hover:bg-orange-400 text-xs font-bold transition-all"
-                >
-                  <RefreshCcw size={16} />
-                  Reopen Selected
-                </button>
 
                 <button
                   onClick={() => setSelectedTickets(new Set())}

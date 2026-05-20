@@ -750,8 +750,8 @@ export default function AdminTicketDetailPage({ params }: { params: Promise<{ id
                 <select
                   value={tempStatus}
                   onChange={(e) => setTempStatus(e.target.value)}
-                  disabled={isSaving}
-                  className="w-full appearance-none px-4 py-3 bg-[#f8f9fc] border border-[#e8ecf2] rounded-2xl text-sm font-bold text-[#1a2744] outline-none focus:bg-white focus:border-[#1a2744] focus:ring-4 focus:ring-indigo-50 transition-all cursor-pointer disabled:opacity-50"
+                  disabled={isSaving || ticket.status === "Closed"}
+                  className="w-full appearance-none px-4 py-3 bg-[#f8f9fc] border border-[#e8ecf2] rounded-2xl text-sm font-bold text-[#1a2744] outline-none focus:bg-white focus:border-[#1a2744] focus:ring-4 focus:ring-indigo-50 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {STATUSES.map((s) => (
                     <option key={s} value={s}>

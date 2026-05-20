@@ -105,8 +105,25 @@ export default function AllTicketsAdmin() {
   const [ticketToDelete, setTicketToDelete] = useState<string | number | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Edit Modal States
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editTicketId, setEditTicketId] = useState<string | number | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+
   // Multi-select
   const [selectedTickets, setSelectedTickets] = useState<Set<string | number>>(new Set());
+  const [showBulkAssign, setShowBulkAssign] = useState(false);
+  const [showToolbarAssign, setShowToolbarAssign] = useState(false);
+
+  // Toast notification
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
+
+  const showToast = (message: string, type: "success" | "error" | "info" = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
 
   /* ---------------- AUTH GUARD ---------------- */
 
@@ -396,7 +413,14 @@ export default function AllTicketsAdmin() {
   };
 
   const bulkClose = async () => {
-    if (selectedTickets.size === 0) return;
+    if (selectedTickets.size === 0) {
+      showToast("Please select one ticket to close.", "info");
+      return;
+    }
+    if (selectedTickets.size > 1) {
+      showToast("Please close tickets one at a time.", "info");
+      return;
+    }
     try {
       setRefreshing(true);
       const { error } = await supabase
@@ -407,6 +431,9 @@ export default function AllTicketsAdmin() {
       if (!error) {
         await fetchTickets();
         setSelectedTickets(new Set());
+        showToast("Ticket closed successfully.", "success");
+      } else {
+        showToast(`Failed to close ticket: ${error.message}`, "error");
       }
     } finally {
       setRefreshing(false);
@@ -515,6 +542,48 @@ export default function AllTicketsAdmin() {
     }
   };
 
+  const handleOpenEditModal = () => {
+    if (selectedTickets.size === 0) {
+      showToast("Please select one ticket to edit.", "info");
+      return;
+    }
+    if (selectedTickets.size > 1) {
+      showToast("Please edit tickets one at a time.", "info");
+      return;
+    }
+    const ticketId = Array.from(selectedTickets)[0];
+    const ticket = tickets.find(t => String(t.id) === String(ticketId));
+    if (ticket) {
+      setEditTicketId(ticket.id);
+      setEditTitle(ticket.title || "");
+      setEditDescription(ticket.description || "");
+      setShowEditModal(true);
+    }
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTicketId) return;
+
+    try {
+      setIsEditing(true);
+      const { error } = await supabase
+        .from("tickets")
+        .update({ title: editTitle, description: editDescription })
+        .eq("id", editTicketId);
+
+      if (error) {
+        showToast(`Failed to update ticket: ${error.message}`, "error");
+      } else {
+        await fetchTickets();
+        setShowEditModal(false);
+        showToast("Ticket updated successfully!", "success");
+      }
+    } finally {
+      setIsEditing(false);
+    }
+  };
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push("/login");
@@ -615,16 +684,39 @@ export default function AllTicketsAdmin() {
 
               <div className="w-px h-6 bg-[#e8ecf2] mx-1"></div>
 
-              <button className="bg-[#f0f3f8] text-[#1a2744] hover:bg-[#e8ecf2] px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95">Edit</button>
+              <button onClick={handleOpenEditModal} className="bg-[#f0f3f8] text-[#1a2744] hover:bg-[#e8ecf2] px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95">Edit</button>
               <button className="bg-[#f0f3f8] text-[#1a2744] hover:bg-[#e8ecf2] px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95">Pick Up</button>
               <button className="bg-[#f0f3f8] text-[#1a2744] hover:bg-[#e8ecf2] px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95" onClick={bulkClose}>Close</button>
-              <button className="bg-[#f0f3f8] text-[#1a2744] hover:bg-[#e8ecf2] px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95">Merge</button>
-              <button className="bg-[#f0f3f8] text-[#1a2744] hover:bg-[#e8ecf2] px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95">Link Requests</button>
-              <button className="flex items-center gap-2 bg-[#f0f3f8] text-[#1a2744] hover:bg-[#e8ecf2] px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95">
-                <span>Assign</span>
-                <ChevronDown size={14} className="text-[#8c9bba]" />
-              </button>
-              <button className="bg-red-50 text-red-600 hover:bg-red-100 px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 border border-red-100 ml-1">Delete</button>
+              
+              <div className="relative">
+                <button 
+                  onClick={() => setShowToolbarAssign(!showToolbarAssign)}
+                  className="flex items-center gap-2 bg-[#f0f3f8] text-[#1a2744] hover:bg-[#e8ecf2] px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95"
+                >
+                  <span>Assign</span>
+                  <ChevronDown size={14} className="text-[#8c9bba]" />
+                </button>
+                {showToolbarAssign && (
+                  <div className="absolute top-full left-0 mt-2 w-60 bg-white rounded-2xl shadow-2xl p-2 z-50 animate-fade-in-down border border-[#e8ecf2]" style={{ transformOrigin: 'top' }}>
+                    <p className="px-4 py-2 text-[10px] uppercase font-black tracking-widest text-[#8c9bba] border-b border-[#f0f3f8] mb-1">Select Technician</p>
+                    {staff.length === 0 && (
+                      <p className="px-4 py-3 text-xs text-[#8c9bba] font-medium">No staff available.</p>
+                    )}
+                    {staff.map(s => (
+                      <button
+                        key={s.id}
+                        onClick={() => { bulkAssign(s.id); setShowToolbarAssign(false); }}
+                        className="w-full text-left px-4 py-2.5 rounded-xl text-xs font-bold text-[#1a2744] hover:bg-[#f0f3f8] transition-colors flex items-center gap-2"
+                      >
+                        <div className="w-6 h-6 rounded-full bg-[#1a2744] text-white text-[9px] font-black flex items-center justify-center flex-shrink-0">
+                          {s.full_name?.charAt(0)?.toUpperCase()}
+                        </div>
+                        {s.full_name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="flex items-center gap-3 text-xs font-bold text-[#8c9bba] bg-[#f8f9fc] px-4 py-1.5 rounded-xl border border-[#e8ecf2]">
@@ -769,23 +861,7 @@ export default function AllTicketsAdmin() {
                         )}
                       </td>
                       <td className="pr-8 py-5 text-right flex items-center justify-end gap-2">
-                        <div className="relative group/menu">
-                          <button className="p-2 rounded-xl bg-[#f0f3f8] text-[#1a2744] hover:bg-[#1a2744] hover:text-white transition-all">
-                            <UserPlus size={16} />
-                          </button>
-                          <div className="absolute top-1/2 right-full mr-2 -translate-y-1/2 w-48 bg-white rounded-2xl shadow-2xl p-2 hidden group-hover/menu:block z-50 animate-fade-in-up border border-[#e8ecf2]">
-                            <p className="px-3 py-1.5 text-[9px] uppercase font-black tracking-widest text-[#8c9bba] border-b border-[#f0f3f8] mb-1">Quick Assign</p>
-                            {staff.map(s => (
-                              <button
-                                key={s.id}
-                                onClick={() => handleAssignTicket(t.id, s.id)}
-                                className="w-full text-left px-3 py-1.5 rounded-lg text-xs font-bold text-[#1a2744] hover:bg-[#f8f9fc] transition-colors"
-                              >
-                                {s.full_name}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
+                        {/* Quick Assign Removed */}
 
                         <button
                           onClick={() => handleUpdateStatus(t.id, t.status === "Resolved" ? "Open" : "Resolved")}
@@ -833,23 +909,28 @@ export default function AllTicketsAdmin() {
               </div>
 
               <div className="flex items-center gap-4">
-                <div className="relative group">
-                  <button className="flex items-center gap-2 px-6 py-2 rounded-xl bg-white/10 hover:bg-white text-xs font-bold transition-all hover:text-[#1a2744]">
+                <div className="relative">
+                  <button
+                    onClick={() => setShowBulkAssign(!showBulkAssign)}
+                    className="flex items-center gap-2 px-6 py-2 rounded-xl bg-white/10 hover:bg-white text-xs font-bold transition-all hover:text-[#1a2744]"
+                  >
                     <UserPlus size={16} />
                     Assign to...
                   </button>
-                  <div className="absolute bottom-full left-0 mb-2 w-56 bg-white rounded-2xl shadow-2xl p-2 hidden group-hover:block animate-fade-in-up">
-                    <p className="px-4 py-2 text-[10px] uppercase font-black tracking-widest text-[#8c9bba] border-b border-[#f0f3f8] mb-1">Select Technician</p>
-                    {staff.map(s => (
-                      <button
-                        key={s.id}
-                        onClick={() => bulkAssign(s.id)}
-                        className="w-full text-left px-4 py-2 rounded-xl text-xs font-bold text-[#1a2744] hover:bg-[#f8f9fc] transition-colors"
-                      >
-                        {s.full_name}
-                      </button>
-                    ))}
-                  </div>
+                  {showBulkAssign && (
+                    <div className="absolute bottom-full left-0 mb-2 w-56 bg-white rounded-2xl shadow-2xl p-2 animate-fade-in-up">
+                      <p className="px-4 py-2 text-[10px] uppercase font-black tracking-widest text-[#8c9bba] border-b border-[#f0f3f8] mb-1">Select Technician</p>
+                      {staff.map(s => (
+                        <button
+                          key={s.id}
+                          onClick={() => { bulkAssign(s.id); setShowBulkAssign(false); }}
+                          className="w-full text-left px-4 py-2 rounded-xl text-xs font-bold text-[#1a2744] hover:bg-[#f8f9fc] transition-colors"
+                        >
+                          {s.full_name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <button
@@ -869,6 +950,101 @@ export default function AllTicketsAdmin() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* EDIT TICKET FLOATING PANEL */}
+        {showEditModal && (
+          <>
+            {/* Backdrop */}
+            <div
+              className="fixed inset-0 z-[99] bg-black/20 backdrop-blur-[2px]"
+              onClick={() => setShowEditModal(false)}
+            />
+            {/* Floating Panel */}
+            <div className="fixed top-0 right-0 h-full z-[100] w-full max-w-md flex flex-col bg-white shadow-2xl border-l border-[#e8ecf2] animate-slide-in-right">
+              {/* Header */}
+              <div className="flex items-center justify-between px-8 py-6 border-b border-[#f0f3f8] bg-gradient-to-r from-[#1a2744] to-[#253560]">
+                <div>
+                  <h2 className="text-lg font-black text-white tracking-tight">Edit Ticket</h2>
+                  <p className="text-[11px] text-[#8fa0c8] mt-0.5 font-medium">Modify title &amp; description</p>
+                </div>
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Accent bar */}
+              <div className="h-1 w-full bg-gradient-to-r from-[#e91e1e] via-[#1a2744] to-[#0e12ff]" />
+
+              {/* Body */}
+              <form onSubmit={handleEditSubmit} className="flex flex-col flex-1 overflow-y-auto px-8 py-8 gap-6">
+
+                {/* Ticket ID badge */}
+                <div className="inline-flex items-center gap-2 bg-[#f0f3f8] text-[#1a2744] text-[11px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border border-[#e8ecf2] w-fit">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#1a2744] inline-block" />
+                  Ticket ID-{editTicketId}
+                </div>
+
+                {/* Title field */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-[11px] font-black uppercase tracking-widest text-[#8c9bba]">
+                    Ticket Title <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editTitle}
+                    disabled={isEditing}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    required
+                    placeholder="Enter ticket title..."
+                    className="w-full px-4 py-3.5 rounded-2xl outline-none text-sm font-semibold bg-[#f8f9fc] text-[#1a2744] border border-[#e8ecf2] focus:border-indigo-400 focus:bg-white focus:shadow-[0_0_0_4px_rgba(99,102,241,0.1)] transition-all placeholder:text-[#c0cad9] disabled:opacity-60"
+                  />
+                </div>
+
+                {/* Description field */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-[11px] font-black uppercase tracking-widest text-[#8c9bba]">
+                    Description <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    value={editDescription}
+                    disabled={isEditing}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    required
+                    placeholder="Describe the issue in detail..."
+                    className="w-full px-4 py-3.5 rounded-2xl outline-none text-sm font-semibold bg-[#f8f9fc] text-[#1a2744] border border-[#e8ecf2] focus:border-indigo-400 focus:bg-white focus:shadow-[0_0_0_4px_rgba(99,102,241,0.1)] transition-all placeholder:text-[#c0cad9] disabled:opacity-60 min-h-[200px] resize-none"
+                  />
+                  <p className="text-[10px] text-[#8c9bba] font-medium">{editDescription.length} characters</p>
+                </div>
+
+                {/* Spacer */}
+                <div className="flex-1" />
+
+                {/* Actions */}
+                <div className="flex gap-3 pt-4 border-t border-[#f0f3f8]">
+                  <button
+                    type="button"
+                    onClick={() => setShowEditModal(false)}
+                    disabled={isEditing}
+                    className="flex-1 px-4 py-3 rounded-2xl text-sm font-bold text-[#1a2744] bg-[#f0f3f8] hover:bg-[#e8ecf2] transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isEditing}
+                    className="flex-1 px-4 py-3 rounded-2xl text-sm font-bold text-white bg-[#1a2744] hover:bg-indigo-700 transition-all active:scale-95 shadow-lg shadow-indigo-100 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isEditing ? <Loader2 size={16} className="animate-spin" /> : <CheckSquare size={16} />}
+                    {isEditing ? "Saving..." : "Save Changes"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </>
         )}
 
         {/* NEW INCIDENT MODAL */}
@@ -1051,6 +1227,32 @@ export default function AllTicketsAdmin() {
                 </button>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* TOAST NOTIFICATION */}
+        {toast && (
+          <div className={`fixed bottom-8 right-8 z-[200] flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl border animate-toast max-w-sm
+            ${toast.type === "success" ? "bg-emerald-50 border-emerald-200 text-emerald-800" : ""}
+            ${toast.type === "error"   ? "bg-red-50 border-red-200 text-red-800" : ""}
+            ${toast.type === "info"    ? "bg-indigo-50 border-indigo-200 text-indigo-800" : ""}
+          `}>
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0
+              ${toast.type === "success" ? "bg-emerald-100" : ""}
+              ${toast.type === "error"   ? "bg-red-100" : ""}
+              ${toast.type === "info"    ? "bg-indigo-100" : ""}
+            `}>
+              {toast.type === "success" && <CheckCircle2 size={16} className="text-emerald-600" />}
+              {toast.type === "error"   && <AlertCircle  size={16} className="text-red-600" />}
+              {toast.type === "info"    && <AlertTriangle size={16} className="text-indigo-500" />}
+            </div>
+            <p className="text-sm font-bold leading-snug flex-1">{toast.message}</p>
+            <button
+              onClick={() => setToast(null)}
+              className="p-1 rounded-lg hover:bg-black/5 transition-colors flex-shrink-0"
+            >
+              <X size={14} />
+            </button>
           </div>
         )}
 
