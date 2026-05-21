@@ -215,7 +215,7 @@ export default function DashboardPage() {
       const tix = ticketData || [];
       console.log("Supabase Data Debug - Tickets fetched for user:", currentUser.id, "Count:", tix.length, "Tickets:", tix);
       setTickets(tix);
-      fetchLatestAnnouncements();
+      fetchLatestAnnouncements(tix, currentUser.id);
       setStats({
         closed: tix.filter(t => t.status === "Closed").length,
         open: tix.filter(t => t.status === "Open").length,
@@ -242,11 +242,30 @@ export default function DashboardPage() {
     setRefreshing(false);
   };
 
-  const fetchLatestAnnouncements = async () => {
+  const fetchLatestAnnouncements = async (passedTickets?: TicketType[], userId?: string) => {
     try {
       setLoadingAnnouncements(true);
-      const { data: userTickets } = await supabase.from("tickets").select("id").eq("user_id", user?.id);
-      const ticketIds = (userTickets || []).map(t => String(t.id)).filter(Boolean);
+      
+      let ticketIds: string[] = [];
+      if (passedTickets && passedTickets.length > 0) {
+        ticketIds = passedTickets.map(t => String(t.id)).filter(Boolean);
+      } else {
+        let targetUserId = userId || user?.id;
+        if (!targetUserId) {
+          const { data: authData } = await supabase.auth.getUser();
+          targetUserId = authData.user?.id;
+        }
+
+        if (targetUserId) {
+          const { data: userTickets } = await supabase
+            .from("tickets")
+            .select("id")
+            .eq("user_id", targetUserId);
+          ticketIds = (userTickets || []).map(t => String(t.id)).filter(Boolean);
+        } else if (tickets && tickets.length > 0) {
+          ticketIds = tickets.map(t => String(t.id)).filter(Boolean);
+        }
+      }
 
       if (ticketIds.length === 0) {
         setAnnouncements([]);
@@ -261,7 +280,7 @@ export default function DashboardPage() {
         `)
         .in("ticket_id", ticketIds)
         .order("created_at", { ascending: false })
-        .limit(3);
+        .limit(50);
 
       if (error) throw error;
       setAnnouncements(data || []);
@@ -830,6 +849,128 @@ function SkeletonCard() {
   );
 }
 
+function AnnouncementsView({ user, tickets }: { user: UserType | null, tickets: TicketType[] }) {
+  const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const myTicketIds = new Set(tickets.map(t => t.id));
+
+  useEffect(() => {
+    fetchAnnouncements();
+
+    const channelName = `announcements-changes-${Date.now()}`;
+    const channel = supabase
+      .channel(channelName)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'announcements' }, () => {
+        fetchAnnouncements();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [tickets]);
+
+  const fetchAnnouncements = async () => {
+    try {
+      setLoading(true);
+      const ticketIds = tickets.map(t => String(t.id)).filter(Boolean);
+      if (ticketIds.length === 0) {
+        setAnnouncements([]);
+        setLoading(false);
+        return;
+      }
+      const { data, error } = await supabase
+        .from("announcements")
+        .select(`
+          id,
+          ticket_id,
+          content,
+          status,
+          created_at,
+          tickets (title, id)
+        `)
+        .in("ticket_id", ticketIds)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      setAnnouncements(data as any);
+    } catch (err: any) {
+      console.error("Error fetching announcements full debug:", err);
+      console.error("Error fetching announcements message:", err?.message || JSON.stringify(err));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-6 h-full pb-8">
+      <div className="flex-shrink-0">
+        <h1 className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: "#1a2744" }}>Notices</h1>
+        <p className="text-xs sm:text-sm mt-1" style={{ color: "#8c9bba" }}>Stay informed with the latest official system updates.</p>
+      </div>
+      <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar">
+        {loading ? (
+          <div className="flex flex-col gap-4">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="h-32 bg-white rounded-2xl animate-pulse border border-[#e8ecf2]" />
+            ))}
+          </div>
+        ) : announcements.length === 0 ? (
+          <div className="bg-white rounded-[2.5rem] p-12 text-center border border-dashed border-[#e8ecf2] flex flex-col items-center">
+            <div className="w-16 h-16 bg-[#f8f9fc] rounded-2xl flex items-center justify-center mb-4">
+              <Megaphone size={32} className="text-[#8c9bba] opacity-30" />
+            </div>
+            <h4 className="text-base font-bold text-[#1a2744] ">No announcements yet</h4>
+            <p className="text-xs text-[#8c9bba] mt-1 max-w-xs">All official ICT updates will be listed here.</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4">
+            {announcements.map((ann) => {
+              const status = ann.status || "Update";
+              const note = ann.content;
+              const isMine = myTicketIds.has(ann.ticket_id);
+              return (
+                <div key={ann.id} className="bg-[#f8f9fc] p-4 rounded-xl border border-[#e0e5eb] shadow-sm hover:shadow-md transition-all relative overflow-hidden group">
+                  <div className="flex justify-between items-center mb-2">
+                    <div className="flex items-center gap-2">
+                      {isMine && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-[#1a2744] text-white border border-[#1a2744]">Your Ticket</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${
+                        status === "Resolved" ? "bg-[#f0fdf4] text-[#166534] border-[#bbf7d0]" :
+                        status === "On Hold" ? "bg-[#f3f4f6] text-[#000000] border-[#000000]" :
+                        status === "Open" ? "bg-[#fef2f2] text-[#7f1d1d] border-[#fecaca]" :
+                        status === "In Progress" || status === "Work in Progress" ? "bg-[#fefce8] text-[#854d0e] border-[#fef08a]" :
+                        status === "Closed" ? "bg-[#f9fafb] text-[#374151] border-[#d1d5db]" :
+                        "bg-[#f0f3f8] text-[#6b7fa3] border-[#dde3ef]"
+                      }`}> {status} </div>
+                      <span className="text-[10px] font-bold text-[#8c9bba] flex items-center gap-1 uppercase tracking-tighter"><Clock size={11} />{new Date(ann.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <div className="md:col-span-4 flex items-center gap-3">
+                      
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-[#8c9bba]">Case Info</span>
+                        <p className="text-xs font-bold text-[#1a2744] truncate">{ann.tickets?.title}</p>
+                      </div>
+                    </div>
+                    <div className="md:col-span-8 md:border-l md:border-[#e0e5eb] md:pl-4 overflow-hidden">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-[#8c9bba] mb-1 block">Description</span>
+                      <p className="text-sm font-bold text-[#1a2744] leading-relaxed break-words">{note}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ──────────────────────────────────────────── */
 /*  DASHBOARD HOME VIEW                         */
 /* ──────────────────────────────────────────── */
@@ -926,19 +1067,16 @@ function DashboardHome({
         </div>
 
         {/* LATEST ANNOUNCEMENTS */}
-        <div
-          className="lg:col-span-5 bg-white rounded-2xl overflow-hidden flex flex-col min-h-[300px]"
-          style={{ border: "1px solid #e8ecf2" }}
-        >
+        <div className="lg:col-span-5 bg-gray-50 rounded-xl overflow-hidden flex flex-col min-h-[300px]" style={{}}>
           <div className="px-4 sm:px-5 py-3 sm:py-4 flex-shrink-0" style={{ borderBottom: "1px solid #f0f3f8", background: "#fbfcfd" }}>
             <div className="flex items-center gap-2">
               <Megaphone size={16} className="text-[#0e12ffff]" />
               <h2 className="text-sm sm:text-base font-semibold" style={{ color: "#1a2744" }}>Latest Updates</h2>
             </div>
-            <p className="text-[10px] sm:text-xs mt-0.5" style={{ color: "#8c9bba" }}>Official system announcements</p>
+            <p className="text-[10px] sm:text-xs mt-0.5" style={{ color: "#8c9bba" }}>Your ticket updates and notices</p>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+          <div className="flex-1 max-h-[350px] overflow-y-auto p-4 flex flex-col gap-3 custom-scrollbar">
             {loadingAnnouncements ? (
               [...Array(2)].map((_, i) => (
                 <div key={i} className="h-20 bg-gray-50 rounded-xl animate-pulse" />
@@ -952,55 +1090,52 @@ function DashboardHome({
               announcements.map((ann) => {
                 const status = ann.status || "Update";
                 const note = ann.content;
-                const isMine = tickets.some(t => String(t.id) === String(ann.ticket_id));
 
                 return (
-                  <div key={ann.id} className={`p-4 rounded-xl border transition-colors group relative overflow-hidden ${isMine ? 'bg-[#1a2744] border-[#1a2744] text-white shadow-lg' : 'bg-[#f8f9fc] border-[#eef1f6] hover:border-indigo-100'}`}>
-                    <div className="flex justify-between items-center mb-2 relative z-10">
-                      <div>
-                        {isMine && (
-                          <span className="text-[8px] font-black uppercase tracking-widest bg-emerald-400 text-[#1a2744] px-1.5 py-0.5 rounded-full">
-                            Your Ticket
-                          </span>
-                        )}
+                  <div 
+                    key={ann.id} 
+                    className="p-3 rounded-xl bg-gray-50 hover:bg-gray-100 transition-colors flex flex-col gap-2 relative"
+                  >
+                    {/* Status accent indicator ribbon on the left */}
+                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${
+                      status === "Resolved" ? "bg-emerald-500" :
+                      status === "On Hold" ? "bg-amber-500" :
+                      status === "Open" ? "bg-red-500" :
+                      "bg-blue-500"
+                    }`} />
+
+                    <div className="flex items-center justify-between pl-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <h4 className="text-xs font-bold text-[#1a2744] truncate" title={ann.tickets?.title}>
+                          {ann.tickets?.title}
+                        </h4>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded-full border ${isMine
-                          ? 'bg-white/10 text-white border-white/20'
-                          : (status === "Resolved" ? "bg-[#f0fdf4] text-[#166534] border-[#bbf7d0]" :
-                            status === "On Hold" ? "bg-[#f3f4f6] text-[#000000] border-[#000000]" :
-                            status === "Open" ? "bg-[#fef2f2] text-[#7f1d1d] border-[#fecaca]" :
-                            status === "In Progress" || status === "Work in Progress" ? "bg-[#fefce8] text-[#854d0e] border-[#fef08a]" :
-                            status === "Closed" ? "bg-[#f9fafb] text-[#374151] border-[#d1d5db]" :
-                              "bg-[#f0f3f8] text-[#6b7fa3] border-[#dde3ef]")
-                          }`}>
+                      
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className={`text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md ${
+                          status === "Resolved" ? "bg-emerald-50 text-emerald-700 border border-emerald-100" :
+                          status === "On Hold" ? "bg-amber-50 text-amber-700 border border-amber-100" :
+                          status === "Open" ? "bg-red-50 text-red-700 border border-red-100" :
+                          "bg-blue-50 text-blue-700 border border-blue-100"
+                        }`}>
                           {status}
                         </span>
-                        <span className={`text-[8px] font-bold uppercase tracking-tighter flex items-center gap-1 ${isMine ? 'text-indigo-200' : 'text-[#8c9bba]'}`}>
-                          <Clock size={8} />
-                          {new Date(ann.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        <span className="text-[8px] text-[#8c9bba] font-bold tracking-tighter uppercase whitespace-nowrap">
+                          {new Date(ann.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                         </span>
                       </div>
                     </div>
                     
-                    <div className="grid grid-cols-12 gap-3 relative z-10">
-                      <div className="col-span-5">
-                        <p className={`text-[9px] font-medium truncate ${isMine ? 'text-indigo-200' : 'text-[#6b7fa3]'}`}>
-                          Re: {ann.tickets?.title}
-                        </p>
-                      </div>
-                      <div className="col-span-7 border-l border-white/10 pl-3">
-                        <p className={`text-xs font-bold leading-relaxed ${isMine ? 'text-white' : 'text-[#1a2744]'}`}>
-                          "{note}"
-                        </p>
-                      </div>
-                    </div>
+                    <p className="text-xs text-slate-600 pl-1 leading-relaxed font-semibold italic">
+                      "{note}"
+                    </p>
                   </div>
                 );
               })
             )}
           </div>
         </div>
+
       </div>
     </div>
   );
@@ -1598,146 +1733,5 @@ function ProfileItem({ icon, label, value }: { icon: React.ReactNode; label: str
       </p>
     </div>
   );
-}
 
-/* ──────────────────────────────────────────── */
-/*  ANNOUNCEMENTS VIEW                          */
-/* ──────────────────────────────────────────── */
-function AnnouncementsView({ user, tickets }: { user: UserType | null, tickets: TicketType[] }) {
-  const [announcements, setAnnouncements] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const myTicketIds = new Set(tickets.map(t => t.id));
-
-  useEffect(() => {
-    fetchAnnouncements();
-
-    const channelName = `announcements-changes-${Date.now()}`;
-    const channel = supabase
-      .channel(channelName)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'announcements' }, () => {
-        fetchAnnouncements();
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [tickets]);
-
-  const fetchAnnouncements = async () => {
-    try {
-      setLoading(true);
-      const ticketIds = tickets.map(t => String(t.id)).filter(Boolean);
-
-      if (ticketIds.length === 0) {
-        setAnnouncements([]);
-        setLoading(false);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("announcements")
-        .select(`
-          id,
-          ticket_id,
-          content,
-          status,
-          created_at,
-          tickets (title, id)
-        `)
-        .in("ticket_id", ticketIds)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setAnnouncements(data as any);
-    } catch (err: any) {
-      console.error("Error fetching announcements full debug:", err);
-      console.error("Error fetching announcements message:", err?.message || JSON.stringify(err));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="animate-fade-in-up flex flex-col gap-6 h-full pb-8">
-      <div className="flex-shrink-0">
-        <h1 className="text-lg sm:text-xl lg:text-2xl font-bold" style={{ color: "#1a2744" }}>Notices</h1>
-        <p className="text-xs sm:text-sm mt-1" style={{ color: "#8c9bba" }}>Stay informed with the latest official system updates.</p>
-      </div>
-
-      <div className="flex-1 overflow-y-auto pr-1">
-        {loading ? (
-          <div className="flex flex-col gap-4">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-32 bg-white rounded-2xl animate-pulse border border-[#e8ecf2]" />
-            ))}
-          </div>
-        ) : announcements.length === 0 ? (
-          <div className="bg-white rounded-[2.5rem] p-12 text-center border border-dashed border-[#e8ecf2] flex flex-col items-center">
-            <div className="w-16 h-16 bg-[#f8f9fc] rounded-2xl flex items-center justify-center mb-4">
-              <Megaphone size={32} className="text-[#8c9bba] opacity-30" />
-            </div>
-            <h4 className="text-base font-bold text-[#1a2744] ">No announcements yet</h4>
-            <p className="text-xs text-[#8c9bba] mt-1 max-w-xs">All official ICT updates will be listed here.</p>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-4">
-            {announcements.map((ann) => {
-              const status = ann.status || "Update";
-              const note = ann.content;
-              const isMine = myTicketIds.has(ann.ticket_id);
-
-              return (
-                <div key={ann.id} className="bg-white p-5 rounded-2xl border border-[#e8ecf2] shadow-sm hover:shadow-md transition-all relative overflow-hidden group">
-                  <div className="flex justify-between items-center mb-3">
-                    <div className="flex items-center gap-2">
-                      {isMine && (
-                        <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest bg-[#1a2744] text-white border border-[#1a2744]">
-                          Your Ticket
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className={`px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-widest border ${
-                        status === "Resolved" ? "bg-[#f0fdf4] text-[#166534] border-[#bbf7d0]" :
-                        status === "On Hold" ? "bg-[#f3f4f6] text-[#000000] border-[#000000]" :
-                        status === "Open" ? "bg-[#fef2f2] text-[#7f1d1d] border-[#fecaca]" :
-                        status === "In Progress" || status === "Work in Progress" ? "bg-[#fefce8] text-[#854d0e] border-[#fef08a]" :
-                        status === "Closed" ? "bg-[#f9fafb] text-[#374151] border-[#d1d5db]" :
-                        "bg-[#f0f3f8] text-[#6b7fa3] border-[#dde3ef]"
-                        }`}>
-                        {status}
-                      </div>
-                      <span className="text-[10px] font-bold text-[#8c9bba] flex items-center gap-1 uppercase tracking-tighter">
-                        <Clock size={11} />
-                        {new Date(ann.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                    <div className="md:col-span-4 flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-500 flex items-center justify-center shrink-0 border border-indigo-100">
-                        <Shield size={18} />
-                      </div>
-                      <div className="flex flex-col min-w-0">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-[#8c9bba]">Case Info</span>
-                        <p className="text-xs font-bold text-[#1a2744] truncate">{ann.tickets?.title}</p>
-                      </div>
-                    </div>
-                    <div className="md:col-span-8 md:border-l md:border-[#f0f3f8] md:pl-4 overflow-hidden">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-[#8c9bba] mb-1 block">Description</span>
-                      <p className="text-sm font-bold text-[#1a2744] leading-relaxed break-words">
-                        "{note}"
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
 }

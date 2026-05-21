@@ -25,6 +25,8 @@ import {
   X,
   Megaphone
 } from "lucide-react";
+
+
 import {
   PieChart,
   Pie,
@@ -94,6 +96,8 @@ export default function AdminDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [unreadTicketIds, setUnreadTicketIds] = useState<string[]>([]);
+
 
   const [now, setNow] = useState<Date | null>(null);
 
@@ -227,6 +231,24 @@ export default function AdminDashboard() {
       supabase.removeChannel(channel);
     };
   }, []);
+
+// Real‑time subscription to admin messages
+useEffect(() => {
+  const msgChannel = supabase
+    .channel('admin-messages')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+        console.log("New message notification:", payload);
+        const ticketId = (payload.new as any).ticket_id || (payload.new as any).ticketId;
+      if (ticketId) {
+        const idStr = String(ticketId);
+        setUnreadTicketIds((prev) => Array.from(new Set([...prev, idStr])));
+      }
+    })
+    .subscribe();
+  return () => {
+    supabase.removeChannel(msgChannel);
+  };
+}, []);
 
   /* ---------------- DATA AGGREGATION ---------------- */
 
@@ -387,6 +409,7 @@ export default function AdminDashboard() {
           </div>
 
           <div className="flex items-center gap-4">
+            
             <button
               onClick={fetchTickets}
               disabled={refreshing}
@@ -395,6 +418,8 @@ export default function AdminDashboard() {
               <RefreshCcw size={14} className={refreshing ? "animate-spin" : ""} />
               <span className="hidden sm:inline">Refresh Data</span>
             </button>
+
+
 
             <div className="w-10 h-10 rounded-full bg-[#1a2744] flex items-center justify-center text-white text-xs font-bold border-4 border-[#DDD9F9]">
               AD
@@ -616,7 +641,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* DATA TABLE SECTION */}
-          <section className="bg-white rounded-[2.5rem] border border-[#e8ecf2] shadow-[0_20px_50px_-20px_rgba(26,39,68,0.1)] overflow-hidden">
+          <section id="recent-ops" className="bg-white rounded-[2.5rem] border border-[#e8ecf2] shadow-[0_20px_50px_-20px_rgba(26,39,68,0.1)] overflow-hidden">
             <div className="p-6 border-b border-[#f0f3f8] flex items-center justify-between">
               <div>
                 <h3 className="text-xl font-black italic">Recent Operations</h3>
@@ -673,6 +698,7 @@ export default function AdminDashboard() {
                     filteredTickets.map((t) => (
                       <tr key={t.id} className="group hover:bg-[#f8f9fc] transition-colors">
                         <td className="px-8 py-5">
+                                    
                           <span className="text-sm font-black text-[#8c9bba]">ID-</span>
                           <span className="text-sm font-black text-[#1a2744]">{t.id}</span>
                         </td>
@@ -795,20 +821,21 @@ function NavItem({ icon, label, active = false, onClick }: NavItemProps) {
   );
 }
 
+
 interface MetricStatProps {
   label: string;
   value: number;
-  color: string;
+  color?: string;
   labelSuffix?: string;
   subtle?: boolean;
   onClick?: () => void;
 }
 
-function MetricStat({ label, value, color, labelSuffix = "", subtle = false, onClick }: MetricStatProps) {
+function MetricStat({ label, value, color = "#1a2744", labelSuffix = "", subtle = false, onClick }: MetricStatProps) {
   return (
     <div
       onClick={onClick}
-      className={`bg-white p-6 rounded-[2rem] border border-[#e8ecf2] flex flex-col items-center transition-all ${onClick ? 'cursor-pointer hover:shadow-xl active:scale-95' : 'hover:shadow-lg'}`}
+      className={`bg-white p-6 rounded-[2rem] border border-[#e8ecf2] flex flex-col items-center transition-all ${onClick ? 'cursor-pointer hover:shadow-xl active:scale-95' : 'hover:shadow-lg'} ${subtle ? 'opacity-80' : ''}`}
     >
       <span className="text-4xl font-black" style={{ color }}>{value}</span>
       <span className={`text-[10px] font-black uppercase tracking-widest mt-1 text-center ${subtle ? 'text-[#8c9bba]' : 'text-[#1a2744]'}`}>
