@@ -77,6 +77,7 @@ export default function AllTicketsAdmin() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [adminEmail, setAdminEmail] = useState<string>("");
   const [showLogoutModal, setShowLogoutModal] = useState(false);
 
   // Delete Modal States
@@ -99,6 +100,7 @@ export default function AllTicketsAdmin() {
   useEffect(() => {
     const checkUser = async () => {
       const { data } = await supabase.auth.getUser();
+    setAdminEmail(data.user?.email ?? "");
       if (!data.user) {
         router.push("/login");
         return;
@@ -234,7 +236,19 @@ export default function AllTicketsAdmin() {
 
   const filteredTickets = useMemo(() => {
     return tickets.filter(t => {
-      const matchesSearch = t.title.toLowerCase().includes(search.toLowerCase()) || String(t.id).includes(search);
+      const s = search.toLowerCase();
+      const matchesSearch = search === "" || (
+        String(t.id).toLowerCase().includes(s) ||
+        (t.title || "").toLowerCase().includes(s) ||
+        (t.status || "").toLowerCase().includes(s) ||
+        (t.category || "").toLowerCase().includes(s) ||
+        (t.mode || "").toLowerCase().includes(s) ||
+        (t.request_type || "").toLowerCase().includes(s) ||
+        (t.priority || "").toLowerCase().includes(s) ||
+        (t.profiles?.full_name || "").toLowerCase().includes(s) ||
+        (t.profiles?.email || "").toLowerCase().includes(s) ||
+        (t.assignee?.full_name || "").toLowerCase().includes(s)
+      );
       const matchesStatus = filterStatus === "all" || t.status === filterStatus;
       const matchesPriority = filterPriority === "all" || t.priority === filterPriority;
       const matchesStaff = filterStaff === "all" || t.assigned_to === filterStaff;
@@ -435,7 +449,7 @@ export default function AllTicketsAdmin() {
             <NavItem icon={<LayoutDashboard size={18} />} label="Analytics" onClick={() => router.push("/admin")} />
             <NavItem icon={<Ticket size={18} />} label="All Tickets" active onClick={() => { }} />
             <NavItem icon={<Activity size={18} />} label="Request" onClick={() => router.push("/admin/requests")} />
-            <NavItem icon={<Calendar size={18} />} label="Schedules" onClick={() => { }} />
+
           </nav>
 
           <div className="mt-auto pt-6 border-t border-[#e8ecf2]">
@@ -462,17 +476,11 @@ export default function AllTicketsAdmin() {
           </div>
 
           <div className="flex items-center gap-4">
-            <button
-              onClick={fetchTickets}
-              disabled={refreshing}
-              className="flex items-center gap-2 bg-[#f0f3f8] text-[#1a2744] hover:bg-[#e8ecf2] px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all active:scale-95 disabled:opacity-50"
-            >
-              <RefreshCcw size={14} className={refreshing ? "animate-spin" : ""} />
-              <span className="hidden sm:inline">Sync All</span>
-            </button>
 
-            <div className="w-10 h-10 rounded-full bg-[#1a2744] flex items-center justify-center text-white text-xs font-bold border-4 border-[#DDD9F9]">
-              AD
+
+            <div className="flex flex-col items-start px-3 py-1">
+              <span className="text-sm font-semibold text-[#1a2744]">Admin</span>
+              <span className="text-xs text-[#8c9bba]">{adminEmail}</span>
             </div>
           </div>
         </header>
@@ -517,7 +525,7 @@ export default function AllTicketsAdmin() {
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#8c9bba] group-focus-within:text-[#1a2744] transition-colors" size={18} />
               <input
                 type="text"
-                placeholder="Search ticket ID or subjective title..."
+                placeholder="Search any column..."
                 className="w-full pl-12 pr-4 py-3 bg-[#f8f9fc] border border-[#e8ecf2] rounded-2xl outline-none text-sm font-medium focus:bg-white focus:border-[#1a2744] focus:ring-4 focus:ring-indigo-100 transition-all shadow-sm"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -553,7 +561,7 @@ export default function AllTicketsAdmin() {
               </thead>
               <tbody className="divide-y divide-[#f0f3f8]">
                 {loading ? (
-                  <tr><td colSpan={9} className="p-20 text-center font-bold text-[#8c9bba] animate-pulse">Synchronizing records...</td></tr>
+                  <tr><td colSpan={9} className="p-20 text-center font-bold text-[#8c9bba]">Synchronizing records...</td></tr>
                 ) : filteredTickets.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="p-32 text-center">

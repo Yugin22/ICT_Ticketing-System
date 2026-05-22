@@ -24,8 +24,7 @@ export default function TicketsFormPage() {
     const [submitting, setSubmitting] = useState(false);
     const [errorMsg, setErrorMsg] = useState("");
     const [successMsg, setSuccessMsg] = useState("");
-    const [routingMsg, setRoutingMsg] = useState("");
-    const [routingStatus, setRoutingStatus] = useState("");
+
     const [userId, setUserId] = useState<string | null>(null);
     const [user, setUser] = useState<{ full_name: string; email: string } | null>(null);
 
@@ -116,7 +115,7 @@ export default function TicketsFormPage() {
             setSubmitting(true);
             setErrorMsg("");
             setSuccessMsg("");
-            setRoutingMsg("");
+
 
             // ── ENSURE PROFILE EXISTS ──
             const { data: userData } = await supabase.auth.getUser();
@@ -134,8 +133,7 @@ export default function TicketsFormPage() {
                 }
             }
 
-            // ── AUTOMATED ROUTING LOGIC ──
-            setRoutingStatus("Routing..."); // Blue status indicator instead of red alert
+
 
             // 1. Fetch admins with matching expertise
             const { data: matchingStaff, error: staffError } = await supabase
@@ -212,8 +210,7 @@ export default function TicketsFormPage() {
     };
 
     const handleSuccess = async () => {
-        setSuccessMsg("Ticket submitted successfully!");
-        setRoutingMsg("");
+        setSuccessMsg("Ticket successfully created");
         window.scrollTo({ top: 0, behavior: "smooth" });
 
         // Clear form
@@ -222,7 +219,11 @@ export default function TicketsFormPage() {
         setCategory("");
 
         if (userId) await fetchUserTickets(userId);
-        setTimeout(() => setSuccessMsg(""), 5000);
+        
+        setTimeout(() => {
+            setSuccessMsg("");
+            router.push("/dashboard");
+        }, 1500);
     };
 
     const getStatusIcon = (status: string) => {
@@ -236,45 +237,45 @@ export default function TicketsFormPage() {
             <div className="min-h-screen bg-[#f8f9fc] font-sans pb-12 overflow-x-hidden">
                 <header className="bg-white px-4 sm:px-10 py-4 sm:py-5 flex items-center justify-between border-b border-[#e8ecf2]">
                     <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#e8ecf2] animate-pulse" />
-                        <div className="w-32 h-6 rounded-md bg-[#e8ecf2] animate-pulse" />
+                        <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-[#e8ecf2]" />
+                        <div className="w-32 h-6 rounded-md bg-[#e8ecf2]" />
                     </div>
-                    <div className="w-36 h-9 rounded-xl bg-[#e8ecf2] animate-pulse hidden sm:block" />
+                    <div className="w-36 h-9 rounded-xl bg-[#e8ecf2] hidden sm:block" />
                 </header>
 
                 <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 mt-6 sm:mt-8 lg:mt-12 flex flex-col xl:flex-row gap-8 lg:gap-10">
                     <div className="w-full xl:w-7/12 flex flex-col gap-6">
                         <div>
-                            <div className="w-48 sm:w-64 h-8 sm:h-10 rounded-lg bg-[#e8ecf2] animate-pulse" />
-                            <div className="w-full max-w-sm h-4 sm:h-5 rounded-md bg-[#e8ecf2] animate-pulse mt-3" />
+                            <div className="w-48 sm:w-64 h-8 sm:h-10 rounded-lg bg-[#e8ecf2]" />
+                            <div className="w-full max-w-sm h-4 sm:h-5 rounded-md bg-[#e8ecf2] mt-3" />
                         </div>
                         <div className="bg-white rounded-[2rem] p-6 sm:p-8 border border-[#e8ecf2] flex flex-col gap-5">
-                            <div className="w-28 h-4 rounded-md bg-[#e8ecf2] animate-pulse" />
-                            <div className="w-full h-14 rounded-2xl bg-[#f0f3f8] animate-pulse" />
-                            <div className="w-32 h-4 rounded-md bg-[#e8ecf2] animate-pulse mt-2" />
-                            <div className="w-full h-14 rounded-2xl bg-[#f0f3f8] animate-pulse" />
-                            <div className="w-36 h-4 rounded-md bg-[#e8ecf2] animate-pulse mt-2" />
-                            <div className="w-full h-36 rounded-2xl bg-[#f0f3f8] animate-pulse" />
+                            <div className="w-28 h-4 rounded-md bg-[#e8ecf2]" />
+                            <div className="w-full h-14 rounded-2xl bg-[#f0f3f8]" />
+                            <div className="w-32 h-4 rounded-md bg-[#e8ecf2] mt-2" />
+                            <div className="w-full h-14 rounded-2xl bg-[#f0f3f8]" />
+                            <div className="w-36 h-4 rounded-md bg-[#e8ecf2] mt-2" />
+                            <div className="w-full h-36 rounded-2xl bg-[#f0f3f8]" />
                             <div className="flex flex-col sm:flex-row items-center gap-4 justify-end mt-4 pt-6 border-t border-[#f0f3f8]">
-                                <div className="w-full sm:w-24 h-12 rounded-2xl bg-[#e8ecf2] animate-pulse" />
-                                <div className="w-full sm:w-40 h-12 rounded-2xl bg-[#e8ecf2] animate-pulse" />
+                                <div className="w-full sm:w-24 h-12 rounded-2xl bg-[#e8ecf2]" />
+                                <div className="w-full sm:w-40 h-12 rounded-2xl bg-[#e8ecf2]" />
                             </div>
                         </div>
                     </div>
 
                     <div className="w-full xl:w-5/12 flex flex-col gap-6 hidden md:flex">
                         <div>
-                            <div className="w-48 h-8 sm:h-10 rounded-lg bg-[#e8ecf2] animate-pulse" />
-                            <div className="w-56 h-4 sm:h-5 rounded-md bg-[#e8ecf2] animate-pulse mt-3" />
+                            <div className="w-48 h-8 sm:h-10 rounded-lg bg-[#e8ecf2]" />
+                            <div className="w-56 h-4 sm:h-5 rounded-md bg-[#e8ecf2] mt-3" />
                         </div>
                         <div className="bg-white rounded-[2rem] border border-[#e8ecf2] h-[550px] overflow-hidden">
                             <div className="p-5 sm:p-6 border-b border-[#f0f3f8] flex justify-between items-center">
-                                <div className="w-32 h-5 rounded-md bg-[#e8ecf2] animate-pulse" />
-                                <div className="w-8 h-6 rounded-lg bg-[#e8ecf2] animate-pulse" />
+                                <div className="w-32 h-5 rounded-md bg-[#e8ecf2]" />
+                                <div className="w-8 h-6 rounded-lg bg-[#e8ecf2]" />
                             </div>
                             <div className="p-4 flex flex-col gap-3">
                                 {[...Array(3)].map((_, i) => (
-                                    <div key={i} className="w-full h-28 rounded-2xl bg-[#f0f3f8] animate-pulse" />
+                                    <div key={i} className="w-full h-28 rounded-2xl bg-[#f0f3f8]" />
                                 ))}
                             </div>
                         </div>
@@ -297,14 +298,7 @@ export default function TicketsFormPage() {
                 <div className="flex items-center gap-3 sm:gap-4">
                     {user && (
                         <div className="flex items-center gap-4">
-                            <Link
-                                href="/announcements"
-                                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-50 text-[#1a2744] hover:bg-indigo-100 transition-all text-[10px] font-black uppercase tracking-widest shadow-sm"
-                            >
-                                <Megaphone size={14} className="text-[#0e12ffff]" />
-                                <span className="hidden sm:inline">Official Updates</span>
-                                <span className="sm:hidden">Updates</span>
-                            </Link>
+
                             <div className="flex items-center gap-2 pr-2 sm:pr-4 border-r border-[#e8ecf2] mr-2">
                                 <div className="w-8 h-8 rounded-full bg-[#1a2744] text-white flex items-center justify-center text-[10px] font-bold">
                                     {(user.full_name || "U").charAt(0).toUpperCase()}
@@ -360,12 +354,7 @@ export default function TicketsFormPage() {
                             </div>
                         )}
 
-                        {(routingMsg || routingStatus) && (
-                            <div className="mb-6 text-sm p-4 rounded-xl bg-blue-50 text-blue-700 border border-blue-200 animate-pulse flex items-center gap-2">
-                                <Loader2 size={18} className="animate-spin" />
-                                {routingMsg || routingStatus}
-                            </div>
-                        )}
+
 
                         <div className="flex flex-col gap-6">
 
@@ -414,9 +403,9 @@ export default function TicketsFormPage() {
                                         type="text"
                                         value={requestType}
                                         disabled
-                                        className="w-full p-4 appearance-none rounded-2xl outline-none transition-all text-black text-sm font-medium bg-[#DDD9F9] border border-[#e8ecf2] cursor-not-allowed"
+                                        className="w-full p-4 appearance-none rounded-2xl outline-none transition-all text-[#8c9bba] text-sm font-semibold bg-[#f8f9fc]/60 border border-dashed border-[#e8ecf2] cursor-not-allowed"
                                     />
-                                    <AlertTriangle size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-black opacity-60 pointer-events-none" />
+                                    <AlertTriangle size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-[#8c9bba] pointer-events-none" />
                                 </div>
                             </div>
 
@@ -428,11 +417,11 @@ export default function TicketsFormPage() {
                                     <select
                                         value={status}
                                         disabled
-                                        className="w-full p-4 appearance-none rounded-2xl outline-none transition-all text-black text-sm font-medium bg-[#DDD9F9] border border-[#e8ecf2] cursor-not-allowed"
+                                        className="w-full p-4 appearance-none rounded-2xl outline-none transition-all text-[#8c9bba] text-sm font-semibold bg-[#f8f9fc]/60 border border-dashed border-[#e8ecf2] cursor-not-allowed"
                                     >
                                         <option value="Open">Open</option>
                                     </select>
-                                    <CircleDot size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-black opacity-60 pointer-events-none" />
+                                    <CircleDot size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-[#8c9bba] pointer-events-none" />
                                 </div>
                             </div>
 
@@ -467,7 +456,7 @@ export default function TicketsFormPage() {
                             <button
                                 type="submit"
                                 disabled={submitting}
-                                className="w-full sm:w-auto px-8 py-3.5 rounded-2xl font-semibold text-sm text-white transition-all active:scale-95 flex items-center justify-center gap-2 bg-[#1a2744] shadow-[0_8px_20px_-6px_rgba(26,39,68,0.5)] disabled:opacity-70 disabled:hover:scale-100 hover:bg-[#0e12ffff]"
+                                className="w-full sm:w-auto px-8 py-4 rounded-2xl font-bold text-sm text-white bg-gradient-to-r from-[#1a2744] to-[#3b5bdb] transition-all hover:scale-[1.02] active:scale-95 shadow-[0_8px_20px_-6px_rgba(26,39,68,0.5)] hover:shadow-[0_12px_24px_-6px_rgba(59,91,219,0.4)] disabled:opacity-70 flex items-center justify-center gap-2 group"
                             >
                                 {submitting ? (
                                     <>
@@ -475,7 +464,7 @@ export default function TicketsFormPage() {
                                     </>
                                 ) : (
                                     <>
-                                        <Send size={18} /> Submit Ticket
+                                        <Send size={18} className="transition-transform group-hover:translate-x-1 group-hover:-translate-y-1" /> Submit Ticket
                                     </>
                                 )}
                             </button>
@@ -514,25 +503,30 @@ export default function TicketsFormPage() {
                             ) : (
                                 <div className="flex flex-col gap-2">
                                     {tickets.map(t => (
-                                        <Link href={`/tickets/${t.id}`} key={t.id} className="block p-4 sm:p-5 rounded-2xl hover:bg-[#f8f9fc] transition-all border border-transparent hover:border-[#e8ecf2] hover:shadow-sm group">
-                                            <div className="flex flex-col gap-2.5">
+                                        <Link href={`/tickets/${t.id}`} key={t.id} className="block p-4 sm:p-5 rounded-2xl hover:bg-[#f8faff] transition-all border border-[#e8ecf2] hover:border-indigo-200 hover:shadow-md group bg-white">
+                                            <div className="flex flex-col gap-3">
                                                 <div className="flex items-start justify-between gap-3">
-                                                    <h3 className="text-sm font-bold text-[#1a2744] truncate group-hover:text-[#0e12ffff] transition-colors">
+                                                    <h3 className="text-sm font-bold text-[#1a2744] truncate group-hover:text-indigo-600 transition-colors">
                                                         {t.title}
                                                     </h3>
-                                                    <div className="flex items-center gap-1.5 bg-white border border-[#e8ecf2] px-2.5 py-1 rounded-lg shadow-sm flex-shrink-0">
+                                                    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border flex-shrink-0 ${
+                                                        t.status === 'Resolved' ? 'bg-emerald-50 border-emerald-100 text-emerald-700' :
+                                                        t.status === 'On Hold' ? 'bg-amber-50 border-amber-100 text-amber-700' :
+                                                        t.status === 'Open' ? 'bg-red-50 border-red-100 text-red-700' :
+                                                        'bg-blue-50 border-blue-100 text-blue-700'
+                                                    }`}>
                                                         {getStatusIcon(t.status)}
-                                                        <span className="text-[10px] font-bold text-[#1a2744] uppercase tracking-wide">
+                                                        <span className="text-[10px] font-black uppercase tracking-widest">
                                                             {t.status}
                                                         </span>
                                                     </div>
                                                 </div>
-                                                <p className="text-xs text-[#6b7fa3] leading-relaxed line-clamp-2">
+                                                <p className="text-xs text-[#6b7fa3] leading-relaxed line-clamp-2 font-medium">
                                                     {t.description}
                                                 </p>
-                                                <span className="text-[10px] font-semibold text-[#8c9bba] flex items-center gap-1.5 mt-1">
+                                                <span className="text-[10px] font-bold text-[#8c9bba] flex items-center gap-1.5 mt-1 uppercase tracking-wider">
                                                     <Clock size={12} />
-                                                    {new Date(t.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                    {new Date(t.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
                                                 </span>
                                             </div>
                                         </Link>

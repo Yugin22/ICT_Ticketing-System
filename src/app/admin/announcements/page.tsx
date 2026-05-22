@@ -125,7 +125,7 @@ export default function AnnouncementsPage() {
             <NavItem icon={<Ticket size={18} />} label="All Tickets" onClick={() => router.push("/admin/tickets")} />
             <NavItem icon={<Activity size={18} />} label="Request" onClick={() => router.push("/admin/requests")} />
             <NavItem icon={<Megaphone size={18} />} label="Announcements" active onClick={() => { }} />
-            <NavItem icon={<Calendar size={18} />} label="Schedules" onClick={() => { }} />
+
           </nav>
 
           <div className="mt-auto pt-6 border-t border-[#e8ecf2]">
@@ -160,7 +160,7 @@ export default function AnnouncementsPage() {
             {loading ? (
               <div className="flex flex-col gap-4">
                 {[...Array(3)].map((_, i) => (
-                  <div key={i} className="h-32 bg-white rounded-3xl animate-pulse border border-[#e8ecf2]" />
+                  <div key={i} className="h-32 bg-white rounded-3xl border border-[#e8ecf2]" />
                 ))}
               </div>
             ) : announcements.length === 0 ? (
@@ -212,7 +212,7 @@ export default function AnnouncementsPage() {
                           <MessageSquare size={20} />
                         </div>
                         <div className="flex flex-col gap-2">
-                          <p className="text-base font-bold text-[#1a2744] leading-relaxed italic">"{note}"</p>
+                          <p className="text-base font-bold text-[#1a2744] leading-relaxed">"{note}"</p>
                           <div className="flex items-center gap-2">
                             <div className="w-5 h-5 rounded-lg bg-indigo-100 flex items-center justify-center text-[8px] font-black text-indigo-700">
                               AD

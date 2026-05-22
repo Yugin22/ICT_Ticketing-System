@@ -23,8 +23,11 @@ import {
   Activity,
   Menu,
   X,
-  Megaphone
+  Megaphone, 
+  Bell, 
+  MessageCircle 
 } from "lucide-react";
+
 
 
 import {
@@ -96,7 +99,12 @@ export default function AdminDashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [unreadTicketIds, setUnreadTicketIds] = useState<string[]>([]);
+const [adminId, setAdminId] = useState<string | null>(null);
+const [adminEmail, setAdminEmail] = useState<string | null>(null);
+const [unreadCount, setUnreadCount] = useState(0);
+const [recentMessage, setRecentMessage] = useState<{ senderName: string; ticketId: string | number } | null>(null);
+
+
 
 
   const [now, setNow] = useState<Date | null>(null);
@@ -126,11 +134,16 @@ export default function AdminDashboard() {
           return;
         }
 
+        // Set adminId for notifications
+        setAdminId(authData.user.id);
+        
         const { data: profileData } = await supabase
           .from("profiles")
-          .select("role")
+          .select("role,email")
           .eq("id", authData.user.id)
           .maybeSingle();
+        // Set admin email from profile if available, otherwise fallback to auth data
+        setAdminEmail(profileData?.email || authData.user.email);
 
         if (!isCurrent) return;
 
@@ -142,13 +155,23 @@ export default function AdminDashboard() {
       }
     };
     checkUserAndRole();
-    return () => {
-      isCurrent = false;
-    };
+    return () => { isCurrent = false; };
   }, [router]);
 
-  /* ---------------- FETCH TICKETS ---------------- */
-
+    /* ---------------- FETCH TICKETS ---------------- */
+  // Fetch unread message count for admin
+  useEffect(() => {
+    if (!adminId) return;
+    const fetchUnread = async () => {
+      const { count, error } = await supabase
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .eq("admin_id", adminId)
+        .eq("is_read", false);
+      if (!error && typeof count === "number") setUnreadCount(count);
+    };
+    fetchUnread();
+  }, [adminId]);
   const fetchTickets = async () => {
     try {
       setRefreshing(true);
@@ -233,22 +256,47 @@ export default function AdminDashboard() {
   }, []);
 
 // Real‑time subscription to admin messages
-useEffect(() => {
-  const msgChannel = supabase
-    .channel('admin-messages')
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
-        console.log("New message notification:", payload);
-        const ticketId = (payload.new as any).ticket_id || (payload.new as any).ticketId;
-      if (ticketId) {
-        const idStr = String(ticketId);
-        setUnreadTicketIds((prev) => Array.from(new Set([...prev, idStr])));
-      }
-    })
-    .subscribe();
-  return () => {
-    supabase.removeChannel(msgChannel);
-  };
-}, []);
+  useEffect(() => {
+    if (!adminId) return;
+
+    const channel = supabase
+      .channel(`admin-messages-${adminId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "ticket_comments",
+        },
+        async (payload: any) => {
+          // Ignore if the admin themselves sent the comment
+          if (payload.new && payload.new.user_id === adminId) return;
+
+          // Fetch sender info
+          if (payload.new && payload.new.user_id) {
+            const { data: senderProfile } = await supabase
+              .from("profiles")
+              .select("full_name, email")
+              .eq("id", payload.new.user_id)
+              .single();
+            
+            const senderName = senderProfile?.full_name || (senderProfile?.email ? senderProfile.email.split('@')[0] : "Someone");
+            setRecentMessage({ senderName, ticketId: payload.new.ticket_id });
+            
+            // Auto-hide toast after 5 seconds
+            setTimeout(() => setRecentMessage(null), 5000);
+          } else {
+            setRecentMessage({ senderName: "Someone", ticketId: payload.new.ticket_id || "Unknown" });
+            setTimeout(() => setRecentMessage(null), 5000);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [adminId]);
 
   /* ---------------- DATA AGGREGATION ---------------- */
 
@@ -349,9 +397,19 @@ useEffect(() => {
 
   const filteredTickets = tickets.filter((t) => {
     const matchesFilter = filter === "all" || t.status.toLowerCase().replace(/ /g, "_") === filter;
-    const matchesSearch =
-      t.title.toLowerCase().includes(search.toLowerCase()) ||
-      String(t.id).toLowerCase().includes(search.toLowerCase());
+    const s = search.toLowerCase();
+    const matchesSearch = search === "" || (
+      String(t.id).toLowerCase().includes(s) ||
+      (t.title || "").toLowerCase().includes(s) ||
+      (t.status || "").toLowerCase().includes(s) ||
+      (t.category || "").toLowerCase().includes(s) ||
+      (t.mode || "").toLowerCase().includes(s) ||
+      (t.request_type || "").toLowerCase().includes(s) ||
+      (t.priority || "").toLowerCase().includes(s) ||
+      (t.profiles?.full_name || "").toLowerCase().includes(s) ||
+      (t.profiles?.email || "").toLowerCase().includes(s) ||
+      (t.assignee?.full_name || "").toLowerCase().includes(s)
+    );
     return matchesFilter && matchesSearch;
   });
 
@@ -382,7 +440,7 @@ useEffect(() => {
             <NavItem icon={<LayoutDashboard size={18} />} label="Analytics" active onClick={() => router.push("/admin")} />
             <NavItem icon={<Ticket size={18} />} label="All Tickets" onClick={() => router.push("/admin/tickets")} />
             <NavItem icon={<Activity size={18} />} label="Request" onClick={() => router.push("/admin/requests")} />
-            <NavItem icon={<Calendar size={18} />} label="Schedules" onClick={() => { }} />
+
           </nav>
 
           <div className="mt-auto pt-6 border-t border-[#e8ecf2]">
@@ -410,21 +468,56 @@ useEffect(() => {
 
           <div className="flex items-center gap-4">
             
-            <button
-              onClick={fetchTickets}
-              disabled={refreshing}
-              className="flex items-center gap-2 bg-[#f0f3f8] text-[#1a2744] hover:bg-[#e8ecf2] px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all active:scale-95 disabled:opacity-50"
+          {/* Remove Bell Icon - use toast notification */}
+          {/* Toast for new message */}
+          {recentMessage && (
+            <div 
+              className="fixed top-24 right-6 bg-white border border-[#e8ecf2] shadow-[0_20px_50px_-15px_rgba(26,39,68,0.2)] rounded-2xl p-4 flex items-start gap-4 animate-slide-in-right z-50 max-w-sm w-full cursor-pointer hover:scale-[1.02] active:scale-95 transition-transform duration-300" 
+              onClick={() => {
+                setSearch(String(recentMessage.ticketId));
+                setFilter("all");
+                setTimeout(() => {
+                  const opsSection = document.getElementById("recent-ops");
+                  if (opsSection) {
+                    opsSection.scrollIntoView({ behavior: "smooth" });
+                  }
+                }, 100);
+              }}
             >
-              <RefreshCcw size={14} className={refreshing ? "animate-spin" : ""} />
-              <span className="hidden sm:inline">Refresh Data</span>
-            </button>
+              {/* Icon Container */}
+              <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0 border border-indigo-100">
+                <MessageCircle size={20} className="fill-indigo-100" />
+              </div>
+              
+              <div className="flex flex-col flex-1 pt-0.5">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm font-bold text-[#1a2744]">{recentMessage.senderName}</span>
+                  <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">New</span>
+                </div>
+                <span className="text-xs font-medium text-[#6b7fa3]">
+                  sent a message on <span className="font-bold text-[#1a2744]">Ticket ID-{recentMessage.ticketId}</span>
+                </span>
+              </div>
 
-
-
-            <div className="w-10 h-10 rounded-full bg-[#1a2744] flex items-center justify-center text-white text-xs font-bold border-4 border-[#DDD9F9]">
-              AD
+              {/* Close Button */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setRecentMessage(null);
+                }}
+                className="text-[#8c9bba] hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors flex-shrink-0 -mt-1 -mr-1"
+                aria-label="Close notification"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
+            <div className="flex flex-col items-start">
+              <span className="text-sm font-semibold text-[#1a2744]">Admin</span>
+              <span className="text-xs text-[#8c9bba]">{adminEmail || ''}</span>
             </div>
           </div>
+
         </header>
 
         <div className="p-4 sm:p-8 space-y-8 animate-fade-in-up">
@@ -660,18 +753,13 @@ useEffect(() => {
                 <div className="relative group">
                   <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8c9bba] group-focus-within:text-[#0e12ffff] transition-colors" />
                   <input
-                    placeholder="Filter by ID or Subject..."
+                    placeholder="Search any column..."
                     className="pl-10 pr-4 py-2 bg-[#f8f9fc] border border-[#e8ecf2] rounded-xl text-sm outline-none focus:ring-4 focus:ring-indigo-100 focus:border-[#0e12ffff] transition-all w-64"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
                 </div>
-                <button className="p-2.5 rounded-xl bg-[#f8f9fc] border border-[#e8ecf2] hover:bg-[#1a2744] hover:text-white transition-all">
-                  <Filter size={16} />
-                </button>
-                <button className="p-2.5 rounded-xl bg-[#f8f9fc] border border-[#e8ecf2] hover:bg-[#1a2744] hover:text-white transition-all">
-                  <MoreVertical size={16} />
-                </button>
+
               </div>
             </div>
 
@@ -691,7 +779,7 @@ useEffect(() => {
                 </thead>
                 <tbody className="divide-y divide-[#f0f3f8]">
                   {loading ? (
-                    <tr><td colSpan={7} className="p-10 text-center text-sm font-bold text-[#8c9bba] animate-pulse">Synchronizing Data...</td></tr>
+                    <tr><td colSpan={7} className="p-10 text-center text-sm font-bold text-[#8c9bba]">Synchronizing Data...</td></tr>
                   ) : filteredTickets.length === 0 ? (
                     <tr><td colSpan={7} className="p-20 text-center text-sm font-bold text-[#8c9bba]">No matching records found in database</td></tr>
                   ) : (

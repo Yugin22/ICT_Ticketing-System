@@ -115,7 +115,7 @@ export default function ForgotPasswordPage() {
 
             {loading && (
               <div className="absolute inset-0 z-50 flex items-center justify-center rounded-3xl lg:rounded-none transition-opacity" style={{ background: "rgba(248, 249, 252, 0.7)", backdropFilter: "blur(4px)" }}>
-                <div className="text-sm font-semibold animate-pulse" style={{ color: "#1a2744" }}>
+                <div className="text-sm font-semibold" style={{ color: "#1a2744" }}>
                   Sending reset link...
                 </div>
               </div>

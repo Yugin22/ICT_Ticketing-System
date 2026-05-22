@@ -116,6 +116,7 @@ export default function AllTicketsAdmin() {
   const [selectedTickets, setSelectedTickets] = useState<Set<string | number>>(new Set());
   const [showBulkAssign, setShowBulkAssign] = useState(false);
   const [showToolbarAssign, setShowToolbarAssign] = useState(false);
+  const [adminEmail, setAdminEmail] = useState<string>("");
 
   // Toast notification
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
@@ -130,6 +131,7 @@ export default function AllTicketsAdmin() {
   useEffect(() => {
     const checkUser = async () => {
       const { data } = await supabase.auth.getUser();
+      setAdminEmail(data.user?.email ?? "");
       if (!data.user) {
         router.push("/login");
         return;
@@ -253,7 +255,19 @@ export default function AllTicketsAdmin() {
 
   const filteredTickets = useMemo(() => {
     return tickets.filter(t => {
-      const matchesSearch = t.title.toLowerCase().includes(search.toLowerCase()) || String(t.id).includes(search);
+      const s = search.toLowerCase();
+      const matchesSearch = search === "" || (
+        String(t.id).toLowerCase().includes(s) ||
+        (t.title || "").toLowerCase().includes(s) ||
+        (t.status || "").toLowerCase().includes(s) ||
+        (t.category || "").toLowerCase().includes(s) ||
+        (t.mode || "").toLowerCase().includes(s) ||
+        (t.request_type || "").toLowerCase().includes(s) ||
+        (t.priority || "").toLowerCase().includes(s) ||
+        (t.profiles?.full_name || "").toLowerCase().includes(s) ||
+        (t.profiles?.email || "").toLowerCase().includes(s) ||
+        (t.assignee?.full_name || "").toLowerCase().includes(s)
+      );
       const matchesStatus = filterStatus === "all" || t.status === filterStatus;
       const matchesPriority = filterPriority === "all" || t.priority === filterPriority;
       const matchesStaff = filterStaff === "all" || t.assigned_to === filterStaff;
@@ -611,7 +625,7 @@ export default function AllTicketsAdmin() {
             <NavItem icon={<LayoutDashboard size={18} />} label="Analytics" onClick={() => router.push("/admin")} />
             <NavItem icon={<Ticket size={18} />} label="All Tickets" onClick={() => router.push("/admin/tickets")} />
             <NavItem icon={<Activity size={18} />} label="Request" active onClick={() => { }} />
-            <NavItem icon={<Calendar size={18} />} label="Schedules" onClick={() => { }} />
+
           </nav>
 
           <div className="mt-auto pt-6 border-t border-[#e8ecf2]">
@@ -638,34 +652,16 @@ export default function AllTicketsAdmin() {
               </button>
               <div className="flex items-center gap-2">
                 <h2 className="text-xl font-bold text-[#1a2744]">All Requests</h2>
-                <button className="p-1.5 text-[#8c9bba] hover:text-[#1a2744] hover:bg-[#f0f3f8] rounded-lg transition-all">
-                  <ChevronDown size={18} />
-                </button>
-                <button className="p-1.5 text-indigo-500 hover:bg-indigo-50 rounded-lg transition-all ml-1">
-                  <Filter size={18} />
-                </button>
+
               </div>
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="flex items-center p-1 bg-[#f0f3f8] rounded-xl border border-[#e8ecf2]">
-                <button className="p-1.5 text-[#8c9bba] hover:text-[#1a2744] rounded-lg transition-all"><Search size={16} /></button>
-                <div className="w-px h-4 bg-[#e8ecf2] mx-1"></div>
-                <button className="p-1.5 bg-white text-[#1a2744] shadow-sm rounded-lg transition-all"><List size={16} /></button>
-                <button className="p-1.5 text-[#8c9bba] hover:text-[#1a2744] hover:bg-white rounded-lg transition-all"><Grid size={16} /></button>
-              </div>
 
-              <button
-                onClick={fetchTickets}
-                disabled={refreshing}
-                className="flex items-center gap-2 bg-[#f0f3f8] text-[#1a2744] hover:bg-[#e8ecf2] px-3 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 disabled:opacity-50 border border-[#e8ecf2]"
-              >
-                <RefreshCcw size={14} className={refreshing ? "animate-spin" : ""} />
-                <span className="hidden sm:inline">Refresh</span>
-              </button>
 
-              <div className="hidden sm:flex w-10 h-10 ml-2 rounded-full bg-[#1a2744] items-center justify-center text-white text-xs font-bold border-4 border-[#DDD9F9]">
-                AD
+              <div className="flex flex-col items-start px-3 py-1">
+                <span className="text-sm font-semibold text-[#1a2744]">Admin</span>
+                <span className="text-xs text-[#8c9bba]">{adminEmail}</span>
               </div>
             </div>
           </div>
@@ -719,13 +715,7 @@ export default function AllTicketsAdmin() {
               </div>
             </div>
 
-            <div className="flex items-center gap-3 text-xs font-bold text-[#8c9bba] bg-[#f8f9fc] px-4 py-1.5 rounded-xl border border-[#e8ecf2]">
-              <span>1 - {filteredTickets.length} of {filteredTickets.length}</span>
-              <div className="flex items-center gap-1 border-l border-[#e8ecf2] pl-3 ml-1">
-                <button className="p-1 hover:text-[#1a2744] hover:bg-white rounded-md transition-all"><ChevronLeft size={16} /></button>
-                <button className="p-1 hover:text-[#1a2744] hover:bg-white rounded-md transition-all"><ChevronRight size={16} /></button>
-              </div>
-            </div>
+
           </div>
         </header>
 
@@ -756,7 +746,7 @@ export default function AllTicketsAdmin() {
               </thead>
               <tbody className="divide-y divide-[#f0f3f8]">
                 {loading ? (
-                  <tr><td colSpan={9} className="p-20 text-center font-bold text-[#8c9bba] animate-pulse">Synchronizing records...</td></tr>
+                  <tr><td colSpan={9} className="p-20 text-center font-bold text-[#8c9bba]">Synchronizing records...</td></tr>
                 ) : filteredTickets.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="p-32 text-center">

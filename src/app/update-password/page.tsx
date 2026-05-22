@@ -202,7 +202,7 @@ export default function UpdatePasswordPage() {
           <div className="bg-white lg:bg-transparent lg:shadow-none p-6 sm:p-8 lg:p-0 rounded-3xl lg:rounded-none shadow-[0_20px_40px_-12px_rgba(26,39,68,0.08)] relative">
             {loading && (
               <div className="absolute inset-0 z-50 flex items-center justify-center rounded-3xl lg:rounded-none transition-opacity" style={{ background: "rgba(248, 249, 252, 0.7)", backdropFilter: "blur(4px)" }}>
-                <div className="text-sm font-semibold animate-pulse" style={{ color: "#1a2744" }}>
+                <div className="text-sm font-semibold" style={{ color: "#1a2744" }}>
                   Updating password...
                 </div>
               </div>

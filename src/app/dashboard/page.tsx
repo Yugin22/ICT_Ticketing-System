@@ -14,7 +14,6 @@ import {
   X,
   LogOut,
   User,
-  RefreshCcw,
   Clock,
   CircleDot,
   PauseCircle,
@@ -64,8 +63,13 @@ type TicketType = {
   description?: string;
   status: string;
   request_type?: string;
+  category?: string;
+  mode?: string;
+  priority?: string;
   created_at: string;
   unread_admin_reply?: boolean;
+  profiles?: { full_name?: string; email?: string };
+  assignee?: { full_name?: string };
 };
 
 export default function DashboardPage() {
@@ -74,7 +78,7 @@ export default function DashboardPage() {
   const [user, setUser] = useState<UserType | null>(null);
   const [loading, setLoading] = useState(true);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [view, setView] = useState("home");
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [viewingTicket, setViewingTicket] = useState<TicketType | null>(null);
@@ -235,13 +239,6 @@ export default function DashboardPage() {
     router.replace("/login");
   };
 
-  const refreshDashboard = async () => {
-    setRefreshing(true);
-    await initUser();
-    await fetchLatestAnnouncements();
-    setRefreshing(false);
-  };
-
   const fetchLatestAnnouncements = async (passedTickets?: TicketType[], userId?: string) => {
     try {
       setLoadingAnnouncements(true);
@@ -300,17 +297,17 @@ export default function DashboardPage() {
       <div className="h-screen flex bg-white overflow-hidden">
         <aside className="hidden md:flex w-[72px] flex-col items-center py-8 gap-6 flex-shrink-0" style={{ background: "#1a2744" }}>
           {[...Array(5)].map((_, i) => (
-            <div key={i} className="w-10 h-10 rounded-xl animate-pulse" style={{ background: "#2a3d5e" }} />
+            <div key={i} className="w-10 h-10 rounded-xl" style={{ background: "#2a3d5e" }} />
           ))}
         </aside>
         <main className="flex-1 p-4 sm:p-6 lg:p-8 space-y-6 overflow-hidden">
-          <div className="h-8 w-56 rounded-lg animate-pulse" style={{ background: "#e8ecf2" }} />
+          <div className="h-8 w-56 rounded-lg" style={{ background: "#e8ecf2" }} />
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
             {[...Array(5)].map((_, i) => (
-              <div key={i} className="h-24 sm:h-28 rounded-2xl animate-pulse" style={{ background: "#e8ecf2" }} />
+              <div key={i} className="h-24 sm:h-28 rounded-2xl" style={{ background: "#e8ecf2" }} />
             ))}
           </div>
-          <div className="flex-1 rounded-2xl animate-pulse" style={{ background: "#e8ecf2", minHeight: "200px" }} />
+          <div className="flex-1 rounded-2xl" style={{ background: "#e8ecf2", minHeight: "200px" }} />
         </main>
       </div>
     );
@@ -407,7 +404,7 @@ export default function DashboardPage() {
               </div>
             )}
             <span
-              className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full animate-pulse"
+              className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full"
               style={{ background: "#15eb39ff", border: "2px solid #1a2744" }}
             />
           </button>
@@ -489,15 +486,13 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            <button
-              onClick={refreshDashboard}
-              disabled={refreshing}
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-medium transition disabled:opacity-50"
-              style={{ color: "#1a2744", background: "#f0f3f8" }}
+            <Link
+              href="/announcements"
+              className="flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-300 active:scale-95 bg-gradient-to-br from-[#f8faff] to-[#f0f4fc] hover:from-[#f0f4fc] hover:to-[#e8effa] border border-[#e2e8f4] shadow-[0_2px_8px_-2px_rgba(30,58,138,0.08)] hover:shadow-[0_4px_12px_-2px_rgba(30,58,138,0.12)]"
             >
-              <RefreshCcw size={13} className={refreshing ? "animate-spin" : ""} />
-              <span className="hidden sm:inline">Refresh</span>
-            </button>
+              <Megaphone size={14} className="text-[#3b5bdb]" strokeWidth={2.5} />
+              <span className="hidden sm:inline text-[10px] font-black uppercase tracking-[0.1em] text-[#1e293b]">Official Updates</span>
+            </Link>
 
             {(() => {
               const latestUnreadId = tickets.find(t => t.unread_admin_reply)?.id;
@@ -510,7 +505,7 @@ export default function DashboardPage() {
                     style={{ color: "#1a2744" }}
                   >
                     <Bell size={16} className="group-hover:scale-110 transition-transform" />
-                    <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full animate-pulse" style={{ background: "#dc2626" }} />
+                    <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full" style={{ background: "#dc2626" }} />
                   </Link>
                 );
               }
@@ -560,13 +555,12 @@ export default function DashboardPage() {
               user={user}
               stats={stats}
               tickets={tickets}
-              refreshing={refreshing}
               announcements={announcements}
               loadingAnnouncements={loadingAnnouncements}
             />
           )}
-          {view === "requests" && <RequestsPage tickets={tickets} refreshing={refreshing} />}
-          {view === "tickets" && <TicketsPage tickets={tickets} refreshing={refreshing} setViewingTicket={setViewingTicket} />}
+          {view === "requests" && <RequestsPage tickets={tickets} />}
+          {view === "tickets" && <TicketsPage tickets={tickets} setViewingTicket={setViewingTicket} />}
           {view === "announcements" && <AnnouncementsView user={user} tickets={tickets} />}
           {view === "profile" && <ProfilePage user={user ?? undefined} stats={stats} onUpdate={initUser} />}
         </main>
@@ -673,7 +667,7 @@ export default function DashboardPage() {
 
               {/* Footer Actions */}
               <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2 border-t border-[#f0f3f8]">
-                <p className="text-[10px] font-medium text-[#8c9bba] italic">
+                <p className="text-[10px] font-medium text-[#8c9bba]">
                   Viewing read-only snapshot of request detail
                 </p>
                 <div className="flex items-center gap-3 w-full sm:w-auto">
@@ -825,10 +819,10 @@ function SkeletonRow() {
   return (
     <div className="flex items-center justify-between gap-4 px-4 py-4 rounded-xl border-b border-[#f0f3f8]">
       <div className="flex items-center gap-3 w-1/2">
-        <div className="w-2 h-2 rounded-full bg-[#e8ecf2] animate-pulse" />
-        <div className="h-4 w-full max-w-[150px] rounded bg-[#e8ecf2] animate-pulse" />
+        <div className="w-2 h-2 rounded-full bg-[#e8ecf2]" />
+        <div className="h-4 w-full max-w-[150px] rounded bg-[#e8ecf2]" />
       </div>
-      <div className="w-16 h-5 rounded-full bg-[#e8ecf2] animate-pulse" />
+      <div className="w-16 h-5 rounded-full bg-[#e8ecf2]" />
     </div>
   );
 }
@@ -837,13 +831,13 @@ function SkeletonCard() {
   return (
     <div className="bg-white border border-[#e8ecf2] rounded-2xl p-5 flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <div className="w-10 h-4 rounded bg-[#e8ecf2] animate-pulse" />
-        <div className="w-1/2 h-5 rounded bg-[#e8ecf2] animate-pulse" />
+        <div className="w-10 h-4 rounded bg-[#e8ecf2]" />
+        <div className="w-1/2 h-5 rounded bg-[#e8ecf2]" />
       </div>
-      <div className="w-full h-3 rounded bg-[#e8ecf2] animate-pulse" />
+      <div className="w-full h-3 rounded bg-[#e8ecf2]" />
       <div className="flex items-center justify-between mt-2">
-        <div className="w-20 h-5 rounded-full bg-[#e8ecf2] animate-pulse" />
-        <div className="w-24 h-4 rounded bg-[#e8ecf2] animate-pulse" />
+        <div className="w-20 h-5 rounded-full bg-[#e8ecf2]" />
+        <div className="w-24 h-4 rounded bg-[#e8ecf2]" />
       </div>
     </div>
   );
@@ -911,7 +905,7 @@ function AnnouncementsView({ user, tickets }: { user: UserType | null, tickets: 
         {loading ? (
           <div className="flex flex-col gap-4">
             {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-32 bg-white rounded-2xl animate-pulse border border-[#e8ecf2]" />
+              <div key={i} className="h-32 bg-white rounded-2xl border border-[#e8ecf2]" />
             ))}
           </div>
         ) : announcements.length === 0 ? (
@@ -975,12 +969,11 @@ function AnnouncementsView({ user, tickets }: { user: UserType | null, tickets: 
 /*  DASHBOARD HOME VIEW                         */
 /* ──────────────────────────────────────────── */
 function DashboardHome({
-  user, stats, tickets, refreshing, announcements, loadingAnnouncements
+  user, stats, tickets, announcements, loadingAnnouncements
 }: {
   user: UserType | null;
   stats: StatsType;
   tickets: TicketType[];
-  refreshing: boolean;
   announcements?: any[];
   loadingAnnouncements?: boolean;
 }) {
@@ -1046,9 +1039,7 @@ function DashboardHome({
           </div>
 
           <div className="flex-1 overflow-y-auto px-1 sm:px-2 py-1">
-            {refreshing ? (
-              [...Array(3)].map((_, i) => <SkeletonRow key={i} />)
-            ) : tickets.length === 0 ? (
+            {tickets.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full py-10 gap-2 sm:gap-3">
                 <div
                   className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl flex items-center justify-center"
@@ -1079,7 +1070,7 @@ function DashboardHome({
           <div className="flex-1 max-h-[350px] overflow-y-auto p-4 flex flex-col gap-3 custom-scrollbar">
             {loadingAnnouncements ? (
               [...Array(2)].map((_, i) => (
-                <div key={i} className="h-20 bg-gray-50 rounded-xl animate-pulse" />
+                <div key={i} className="h-20 bg-gray-50 rounded-xl" />
               ))
             ) : !announcements || announcements.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full py-6 text-center opacity-40">
@@ -1126,7 +1117,7 @@ function DashboardHome({
                       </div>
                     </div>
                     
-                    <p className="text-xs text-slate-600 pl-1 leading-relaxed font-semibold italic">
+                    <p className="text-xs text-slate-600 pl-1 leading-relaxed font-semibold">
                       "{note}"
                     </p>
                   </div>
@@ -1144,7 +1135,7 @@ function DashboardHome({
 /* ──────────────────────────────────────────── */
 /*  REQUESTS PAGE                               */
 /* ──────────────────────────────────────────── */
-function RequestsPage({ tickets, refreshing }: { tickets: TicketType[]; refreshing: boolean }) {
+function RequestsPage({ tickets }: { tickets: TicketType[] }) {
   const todayDate = new Date();
 
   const isCreatedToday = (dateString: string) => {
@@ -1175,9 +1166,7 @@ function RequestsPage({ tickets, refreshing }: { tickets: TicketType[]; refreshi
             <p className="text-[10px] sm:text-xs mt-0.5" style={{ color: "#8c9bba" }}>{currentRequests.length} active request(s)</p>
           </div>
           <div className="flex-col px-1 sm:px-2 py-1 max-h-[350px] overflow-y-auto">
-            {refreshing ? (
-              [...Array(2)].map((_, i) => <SkeletonRow key={i} />)
-            ) : currentRequests.length === 0 ? (
+            {currentRequests.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 gap-3">
                 <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: "#f0f3f8" }}>
                   <ClipboardList size={22} style={{ color: "#8c9bba" }} />
@@ -1200,9 +1189,7 @@ function RequestsPage({ tickets, refreshing }: { tickets: TicketType[]; refreshi
             <p className="text-[10px] sm:text-xs mt-0.5" style={{ color: "#8c9bba" }}>{pastRequests.length} past request(s)</p>
           </div>
           <div className="flex-col px-1 sm:px-2 py-1 max-h-[350px] overflow-y-auto">
-            {refreshing ? (
-              [...Array(2)].map((_, i) => <SkeletonRow key={i} />)
-            ) : pastRequests.length === 0 ? (
+            {pastRequests.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 gap-3">
                 <div className="w-12 h-12 rounded-2xl flex items-center justify-center" style={{ background: "#f0f3f8" }}>
                   <CheckCircle2 size={22} style={{ color: "#8c9bba" }} />
@@ -1227,14 +1214,25 @@ function RequestsPage({ tickets, refreshing }: { tickets: TicketType[]; refreshi
 
 
 
-function TicketsPage({ tickets, refreshing, setViewingTicket }: { tickets: TicketType[]; refreshing: boolean; setViewingTicket: (t: TicketType) => void }) {
+function TicketsPage({ tickets, setViewingTicket }: { tickets: TicketType[]; setViewingTicket: (t: TicketType) => void }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("All");
   const [dateFilter, setDateFilter] = useState("All Time");
 
   const filteredTickets = tickets.filter(t => {
-    const matchesSearch = t.title.toLowerCase().includes(search.toLowerCase()) ||
-      (t.description?.toLowerCase() || "").includes(search.toLowerCase());
+    const s = search.toLowerCase();
+    const matchesSearch = search === "" || (
+      String(t.id).toLowerCase().includes(s) ||
+      (t.title || "").toLowerCase().includes(s) ||
+      (t.status || "").toLowerCase().includes(s) ||
+      (t.category || "").toLowerCase().includes(s) ||
+      (t.mode || "").toLowerCase().includes(s) ||
+      (t.request_type || "").toLowerCase().includes(s) ||
+      (t.priority || "").toLowerCase().includes(s) ||
+      (t.profiles?.full_name || "").toLowerCase().includes(s) ||
+      (t.profiles?.email || "").toLowerCase().includes(s) ||
+      (t.assignee?.full_name || "").toLowerCase().includes(s)
+    );
 
     const matchesStatus = statusFilter === "All" || t.status === statusFilter;
 
@@ -1281,7 +1279,7 @@ function TicketsPage({ tickets, refreshing, setViewingTicket }: { tickets: Ticke
           <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8c9bba]" />
           <input
             type="text"
-            placeholder="Search by title or description..."
+            placeholder="Search any column..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-11 pr-4 py-2.5 bg-[#f8f9fc] border border-[#e8ecf2] rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#0e12ffff]/20 focus:bg-white transition-all"
@@ -1360,9 +1358,7 @@ function TicketsPage({ tickets, refreshing, setViewingTicket }: { tickets: Ticke
               <div className="col-span-2 text-right">Date Created</div>
             </div>
             <div className="flex flex-col gap-3">
-              {refreshing ? (
-                [...Array(4)].map((_, i) => <SkeletonCard key={i} />)
-              ) : filteredTickets.map(t => (
+              {filteredTickets.map(t => (
                 <TicketCard key={t.id} ticket={t} onViewDescription={() => setViewingTicket(t)} />
               ))}
             </div>
@@ -1550,7 +1546,7 @@ function ProfilePage({ user, stats, onUpdate }: { user?: UserType; stats: StatsT
 
             <div className="px-6 pb-8 flex flex-col items-center text-center">
               <div className="-mt-14 relative group">
-                <div className="absolute inset-0 rounded-[2rem] bg-gradient-to-tr from-[#dc2626] to-[#0e12ffff] animate-pulse blur-sm opacity-50 group-hover:opacity-80 transition-opacity" />
+                <div className="absolute inset-0 rounded-[2rem] bg-gradient-to-tr from-[#dc2626] to-[#0e12ffff] blur-sm opacity-50 group-hover:opacity-80 transition-opacity" />
                 <div
                   className="relative w-28 h-28 rounded-[2rem] bg-white p-1.5 shadow-xl"
                   style={{ border: "1px solid #e8ecf2" }}
@@ -1616,22 +1612,23 @@ function ProfilePage({ user, stats, onUpdate }: { user?: UserType; stats: StatsT
               {!isEditing ? (
                 <button
                   onClick={() => setIsEditing(true)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-[#1a2744] hover:bg-red-100 border border-transparent hover:border-[#e8ecf2] transition-all"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-[#1a2744] bg-[#f8f9fc] border border-[#e8ecf2] hover:border-[#3b5bdb] hover:text-[#3b5bdb] hover:bg-indigo-50 active:scale-95 transition-all duration-200"
                 >
+                  <Settings size={14} />
                   Edit Profile
                 </button>
               ) : (
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setIsEditing(false)}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-[#6b7fa3] hover:bg-gray-100 transition-all"
+                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-[#6b7fa3] bg-[#f8f9fc] border border-[#e8ecf2] hover:bg-gray-100 hover:text-[#1a2744] active:scale-95 transition-all duration-200"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleUpdateProfile}
                     disabled={isSubmitting}
-                    className="px-4 py-2 rounded-xl text-xs font-bold text-white bg-[#0e12ffff] active:scale-95 transition-all shadow-md disabled:opacity-50"
+                    className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-[#1a2744] to-[#3b5bdb] active:scale-95 transition-all duration-200 shadow-md hover:shadow-lg disabled:opacity-50"
                   >
                     {isSubmitting ? "Saving..." : "Save Changes"}
                   </button>

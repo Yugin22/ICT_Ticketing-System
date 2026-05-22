@@ -421,7 +421,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
                                 <div
                                   className={`px-5 py-3.5 rounded-3xl text-sm leading-relaxed shadow-sm transition-all duration-300 hover:shadow-md max-w-[90%] sm:max-w-[450px] ${isCurrentAuthor
-                                    ? "bg-[#1a2744] text-white rounded-tr-none"
+                                    ? "bg-indigo-50 text-black border border-indigo-100 rounded-tr-none"
                                     : "bg-[#f8f9fc] text-[#1a2744] border border-[#e8ecf2] rounded-tl-none"
                                     }`}
                                 >
@@ -512,7 +512,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
               </div>
             </div>
 
-            <div className="mt-4 p-5 rounded-3xl bg-indigo-50 border border-indigo-100 italic text-[11px] leading-relaxed text-[#2d4470]">
+            <div className="mt-4 p-5 rounded-3xl bg-indigo-50 border border-indigo-100 text-[11px] leading-relaxed text-[#2d4470]">
               <span className="inline-block mb-1 font-bold uppercase tracking-wider not-italic text-[#0e12ffff]">Note:</span><br />
               Only ICT Personnel are authorized to modify ticket status. Regular users can contribute to the conversation thread.
             </div>
@@ -538,7 +538,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ id: str
 
 function TicketDetailSkeleton() {
   return (
-    <div className="min-h-screen bg-[#f8f9fc] animate-pulse">
+    <div className="min-h-screen bg-[#f8f9fc]">
       <header className="bg-white/80 backdrop-blur-md px-4 sm:px-10 py-4 flex items-center justify-between border-b border-[#e8ecf2] sticky top-0 z-50">
         <div className="flex items-center gap-4">
           <div className="w-10 h-10 bg-[#f0f3f8] rounded-xl" />
