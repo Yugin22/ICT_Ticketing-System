@@ -392,7 +392,7 @@ export default function AdminTicketDetailPage({ params }: { params: Promise<{ id
 
     // Prevent saving if ticket is already closed
     if (ticket.status?.toLowerCase() === "closed" && tempStatus?.toLowerCase() === "closed") {
-      showToast("Ticket already closed", "error");
+      alert("Ticket already closed");
       return;
     }
 

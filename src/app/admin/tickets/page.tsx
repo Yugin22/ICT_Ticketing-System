@@ -280,7 +280,7 @@ export default function AllTicketsAdmin() {
     if (selectedTickets.size === 0) return;
     // Prevent assigning closed tickets
     const closedIds = filteredTickets.filter(t => selectedTickets.has(String(t.id)) && t.status === "Closed").map(t => String(t.id));
-    if (closedIds.length > 0) { showToast("Cannot assign closed tickets", "error"); return; }
+    if (closedIds.length > 0) { alert("Cannot assign closed tickets"); return; }
     try {
       setRefreshing(true);
       const { error } = await supabase
@@ -351,7 +351,7 @@ export default function AllTicketsAdmin() {
 
   const handleUpdateStatus = async (ticketId: string | number, newStatus: string) => {
     const ticket = tickets.find(t => t.id === ticketId);
-    if (ticket?.status === "Closed") { showToast("Cannot modify closed tickets", "error"); return; }
+    if (ticket?.status === "Closed") { alert("Cannot modify closed tickets"); return; }
     try {
       setRefreshing(true);
       const { error } = await supabase
@@ -673,7 +673,7 @@ export default function AllTicketsAdmin() {
 
                         <button
                           onClick={() => {
-                            if (t.status === "Closed") { showToast("Cannot delete closed tickets", "error"); return; }
+                            if (t.status === "Closed") { alert("Cannot delete closed tickets"); return; }
                             setTicketToDelete(t.id);
                             setShowDeleteModal(true);
                           }}
