@@ -17,7 +17,8 @@ import {
   Calendar,
   MessageSquare,
   User as UserIcon,
-  Trash2
+  Trash2,
+  CheckSquare
 } from "lucide-react";
 
 type Announcement = {
@@ -124,6 +125,7 @@ export default function AnnouncementsPage() {
             <NavItem icon={<LayoutDashboard size={18} />} label="Analytics" onClick={() => router.push("/admin")} />
             <NavItem icon={<Ticket size={18} />} label="All Tickets" onClick={() => router.push("/admin/tickets")} />
             <NavItem icon={<Activity size={18} />} label="Request" onClick={() => router.push("/admin/requests")} />
+            <NavItem icon={<CheckSquare size={18} />} label="Pick up" onClick={() => router.push("/admin/pickups")} />
             <NavItem icon={<Megaphone size={18} />} label="Announcements" active onClick={() => { }} />
 
           </nav>

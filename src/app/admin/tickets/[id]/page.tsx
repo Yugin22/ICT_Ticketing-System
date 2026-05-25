@@ -390,6 +390,12 @@ export default function AdminTicketDetailPage({ params }: { params: Promise<{ id
   const handleSaveChanges = async () => {
     if (!ticket) return;
 
+    // Prevent saving if ticket is already closed
+    if (ticket.status?.toLowerCase() === "closed" && tempStatus?.toLowerCase() === "closed") {
+      showToast("Ticket already closed", "error");
+      return;
+    }
+
     try {
       setIsSaving(true);
       let { error, data } = await supabase

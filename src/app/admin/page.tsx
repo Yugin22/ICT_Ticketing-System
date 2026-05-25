@@ -23,6 +23,7 @@ import {
   Activity,
   Menu,
   X,
+  CheckSquare,
   Megaphone, 
   Bell, 
   MessageCircle 
@@ -440,6 +441,7 @@ const [recentMessage, setRecentMessage] = useState<{ senderName: string; ticketI
             <NavItem icon={<LayoutDashboard size={18} />} label="Analytics" active onClick={() => router.push("/admin")} />
             <NavItem icon={<Ticket size={18} />} label="All Tickets" onClick={() => router.push("/admin/tickets")} />
             <NavItem icon={<Activity size={18} />} label="Request" onClick={() => router.push("/admin/requests")} />
+            <NavItem icon={<CheckSquare size={18} />} label="Pick up" onClick={() => router.push("/admin/pickups")} />
 
           </nav>
 

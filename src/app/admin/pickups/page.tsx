@@ -16,6 +16,11 @@ import {
   Calendar,
   MoreVertical,
   ChevronRight,
+  ChevronLeft,
+  ChevronDown,
+  List,
+  Grid,
+  Plus,
   CircleDot,
   PauseCircle,
   Shield,
@@ -26,8 +31,9 @@ import {
   UserPlus,
   Trash2,
   CheckSquare,
-  Megaphone,
-  Loader2
+  AlertTriangle,
+  Loader2,
+  Megaphone
 } from "lucide-react";
 
 /* ---------------- TYPES ---------------- */
@@ -69,7 +75,7 @@ const PRIORITY_COLORS: Record<string, string> = {
 
 /* ---------------- PAGE ---------------- */
 
-export default function AllTicketsAdmin() {
+export default function PickupsAdmin() {
   const router = useRouter();
 
   const [tickets, setTickets] = useState<TicketType[]>([]);
@@ -77,13 +83,6 @@ export default function AllTicketsAdmin() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [adminEmail, setAdminEmail] = useState<string>("");
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
-
-  // Delete Modal States
-  const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [ticketToDelete, setTicketToDelete] = useState<string | number | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
 
   // Filters
   const [search, setSearch] = useState("");
@@ -91,16 +90,53 @@ export default function AllTicketsAdmin() {
   const [filterPriority, setFilterPriority] = useState("all");
   const [filterStaff, setFilterStaff] = useState("all");
 
+  // Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalTitle, setModalTitle] = useState("");
+  const [modalCategory, setModalCategory] = useState("");
+  const [modalMode, setModalMode] = useState("Assigned by Staff");
+  const [modalDescription, setModalDescription] = useState("");
+  const [modalSubmitting, setModalSubmitting] = useState(false);
+  const [modalError, setModalError] = useState("");
+  const [modalSuccess, setModalSuccess] = useState("");
+
+  // Delete Modal States
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [ticketToDelete, setTicketToDelete] = useState<string | number | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Edit Modal States
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editTicketId, setEditTicketId] = useState<string | number | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+
   // Multi-select
   const [selectedTickets, setSelectedTickets] = useState<Set<string | number>>(new Set());
   const [showBulkAssign, setShowBulkAssign] = useState(false);
+  const [showToolbarAssign, setShowToolbarAssign] = useState(false);
+  const [adminEmail, setAdminEmail] = useState<string>("");
+  const [adminId, setAdminId] = useState<string>("");
+
+  // Logout confirmation modal
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+  // Toast notification
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
+
+  const showToast = (message: string, type: "success" | "error" | "info" = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3500);
+  };
 
   /* ---------------- AUTH GUARD ---------------- */
 
   useEffect(() => {
     const checkUser = async () => {
       const { data } = await supabase.auth.getUser();
-    setAdminEmail(data.user?.email ?? "");
+      setAdminEmail(data.user?.email ?? "");
+      setAdminId(data.user?.id ?? "");
       if (!data.user) {
         router.push("/login");
         return;
@@ -141,18 +177,6 @@ export default function AllTicketsAdmin() {
   const fetchTickets = async () => {
     try {
       setRefreshing(true);
-
-      // 0. Auto-close resolved tickets older than 3 days
-      // We use created_at as a proxy for age if updated_at is unavailable, but ideally we check updated_at
-      const threeDaysAgo = new Date();
-      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
-      
-      await supabase
-        .from("tickets")
-        .update({ status: "Closed" })
-        .eq("status", "Resolved")
-        .lte("created_at", threeDaysAgo.toISOString());
-
       // 1. Fetch tickets basic data
       const { data: ticketsData, error: ticketsError } = await supabase
         .from("tickets")
@@ -236,6 +260,9 @@ export default function AllTicketsAdmin() {
 
   const filteredTickets = useMemo(() => {
     return tickets.filter(t => {
+      // ONLY show tickets picked up by this admin
+      if (!adminId || t.assigned_to !== adminId) return false;
+
       const s = search.toLowerCase();
       const matchesSearch = search === "" || (
         String(t.id).toLowerCase().includes(s) ||
@@ -256,7 +283,115 @@ export default function AllTicketsAdmin() {
     });
   }, [tickets, search, filterStatus, filterPriority, filterStaff]);
 
-  /* ---------------- BULK ACTIONS ---------------- */
+  /* ---------------- BULK ACTIONS & CREATION ---------------- */
+
+  const handleCreateIncident = async (e: React.FormEvent) => {
+    e.preventDefault();
+    console.log("Submit Incident clicked", { modalTitle, modalDescription, modalCategory, modalMode });
+    
+    if (!modalTitle || !modalDescription || !modalCategory || !modalMode) {
+      console.warn("Validation failed: missing fields");
+      setModalError("Please fill out all required fields.");
+      return;
+    }
+
+    try {
+      setModalSubmitting(true);
+      setModalError("");
+
+      const { data: userData } = await supabase.auth.getUser();
+      console.log("User data:", userData);
+      if (!userData.user) {
+        setModalError("You must be logged in.");
+        return;
+      }
+
+      // Auto-assign to staff with fewest open tickets in the chosen category
+      const { data: matchingStaff, error: staffError } = await supabase
+        .from("profiles")
+        .select("id, full_name, expertise")
+        .eq("role", "admin")
+        .eq("expertise", modalCategory);
+
+      let assignedTo: string | null = null;
+      if (!staffError && matchingStaff && matchingStaff.length > 0) {
+        const staffWithWorkload = await Promise.all(matchingStaff.map(async (staff) => {
+          const { count } = await supabase
+            .from("tickets")
+            .select("*", { count: 'exact', head: true })
+            .eq("assigned_to", staff.id)
+            .in("status", ["Open", "In Progress", "Work in Progress", "On Hold"]);
+          return { id: staff.id, count: count || 0 };
+        }));
+        const bestStaff = staffWithWorkload.reduce((prev, curr) => (prev.count <= curr.count ? prev : curr));
+        assignedTo = bestStaff.id;
+      }
+
+      const newTicket: any = {
+        title: modalTitle,
+        description: modalDescription,
+        status: "Open",
+        category: modalCategory,
+        mode: modalMode,
+        user_id: userData.user.id,
+        assigned_to: assignedTo,
+        request_type: "Incident"
+      };
+
+      console.log("Attempting to insert ticket:", newTicket);
+      const { error: insertError } = await supabase.from("tickets").insert([newTicket]);
+
+      if (insertError) {
+        console.error("Insert error details:", JSON.stringify(insertError, null, 2));
+        
+        // Handle missing columns (request_type or mode)
+        const errorMessage = insertError.message || "";
+        if (errorMessage.includes("request_type") || errorMessage.includes("mode") || insertError.code === 'PGRST204') {
+          console.warn("Detected missing columns in DB. Retrying without optional fields...");
+          
+          const fallbackTicket: any = {
+            title: modalTitle,
+            description: modalDescription,
+            status: "Open",
+            category: modalCategory,
+            user_id: userData.user.id,
+            assigned_to: assignedTo
+          };
+
+          const { error: retryError } = await supabase.from("tickets").insert([fallbackTicket]);
+          
+          if (retryError) {
+             setModalError(`Failed even with fallback: ${retryError.message}`);
+          } else {
+            setModalSuccess("Incident created! (Warning: Your database is missing the 'mode' column, so it saved as 'Portal')");
+            finishSuccess();
+          }
+        } else {
+          setModalError(errorMessage || "An unknown database error occurred.");
+        }
+      } else {
+        setModalSuccess("Incident created successfully!");
+        finishSuccess();
+      }
+    } catch (err: any) {
+      console.error("Catch block error:", err);
+      setModalError(err.message || "An error occurred");
+    } finally {
+      setModalSubmitting(false);
+    }
+  };
+
+  const finishSuccess = async () => {
+    setModalTitle("");
+    setModalDescription("");
+    setModalCategory("");
+    setModalMode("Assigned by Staff");
+    await fetchTickets();
+    setTimeout(() => {
+      setModalSuccess("");
+      setIsModalOpen(false);
+    }, 2000);
+  };
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
@@ -278,9 +413,6 @@ export default function AllTicketsAdmin() {
 
   const bulkAssign = async (staffId: string) => {
     if (selectedTickets.size === 0) return;
-    // Prevent assigning closed tickets
-    const closedIds = filteredTickets.filter(t => selectedTickets.has(String(t.id)) && t.status === "Closed").map(t => String(t.id));
-    if (closedIds.length > 0) { showToast("Cannot assign closed tickets", "error"); return; }
     try {
       setRefreshing(true);
       const { error } = await supabase
@@ -303,7 +435,16 @@ export default function AllTicketsAdmin() {
   };
 
   const bulkClose = async () => {
-    if (selectedTickets.size === 0) return;
+    if (selectedTickets.size === 0) {
+      showToast("Please select at least one ticket to close.", "info");
+      return;
+    }
+    // Check if any selected ticket is already closed
+    const closedTickets = tickets.filter(t => selectedTickets.has(String(t.id)) && t.status?.toLowerCase() === "closed");
+    if (closedTickets.length > 0) {
+      showToast("Ticket already closed", "error");
+      return;
+    }
     try {
       setRefreshing(true);
       const { error } = await supabase
@@ -314,11 +455,71 @@ export default function AllTicketsAdmin() {
       if (!error) {
         await fetchTickets();
         setSelectedTickets(new Set());
+        showToast("Ticket closed successfully.", "success");
+      } else {
+        showToast(`Failed to close ticket: ${error.message}`, "error");
       }
     } finally {
       setRefreshing(false);
     }
   };
+
+  const handleRestore = async () => {
+    if (selectedTickets.size === 0) {
+      showToast("Please select at least one ticket to restore.", "info");
+      return;
+    }
+    
+    try {
+      setRefreshing(true);
+      const { error } = await supabase
+        .from("tickets")
+        .update({ assigned_to: null, status: "Open" })
+        .in("id", Array.from(selectedTickets));
+
+      if (error) {
+        showToast(`Failed to restore tickets: ${error.message}`, "error");
+      } else {
+        await fetchTickets();
+        setSelectedTickets(new Set());
+        showToast("Tickets restored successfully.", "success");
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleMarkResolved = async () => {
+    if (selectedTickets.size === 0) {
+      showToast("Please select at least one ticket to mark as resolved.", "info");
+      return;
+    }
+    // Check if any selected ticket is already resolved
+    const resolvedTickets = tickets.filter(t => selectedTickets.has(String(t.id)) && t.status?.toLowerCase() === "resolved");
+    if (resolvedTickets.length > 0) {
+      showToast("Ticket already resolved", "error");
+      return;
+    }
+    try {
+      setRefreshing(true);
+      const { error } = await supabase
+        .from("tickets")
+        .update({ status: "Resolved" })
+        .in("id", Array.from(selectedTickets));
+
+      if (!error) {
+        await fetchTickets();
+        setSelectedTickets(new Set());
+        showToast("Ticket marked as resolved.", "success");
+      } else {
+        showToast(`Failed to mark tickets as resolved: ${error.message}`, "error");
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  // Reuse existing bulkClose for closing tickets
 
   const handleAssignTicket = async (ticketId: string | number, staffId: string) => {
     try {
@@ -350,8 +551,6 @@ export default function AllTicketsAdmin() {
   };
 
   const handleUpdateStatus = async (ticketId: string | number, newStatus: string) => {
-    const ticket = tickets.find(t => t.id === ticketId);
-    if (ticket?.status === "Closed") { showToast("Cannot modify closed tickets", "error"); return; }
     try {
       setRefreshing(true);
       const { error } = await supabase
@@ -424,7 +623,49 @@ export default function AllTicketsAdmin() {
     }
   };
 
-  const handleConfirmLogout = async () => {
+  const handleOpenEditModal = () => {
+    if (selectedTickets.size === 0) {
+      showToast("Please select one ticket to edit.", "info");
+      return;
+    }
+    if (selectedTickets.size > 1) {
+      showToast("Please edit tickets one at a time.", "info");
+      return;
+    }
+    const ticketId = Array.from(selectedTickets)[0];
+    const ticket = tickets.find(t => String(t.id) === String(ticketId));
+    if (ticket) {
+      setEditTicketId(ticket.id);
+      setEditTitle(ticket.title || "");
+      setEditDescription(ticket.description || "");
+      setShowEditModal(true);
+    }
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTicketId) return;
+
+    try {
+      setIsEditing(true);
+      const { error } = await supabase
+        .from("tickets")
+        .update({ title: editTitle, description: editDescription })
+        .eq("id", editTicketId);
+
+      if (error) {
+        showToast(`Failed to update ticket: ${error.message}`, "error");
+      } else {
+        await fetchTickets();
+        setShowEditModal(false);
+        showToast("Ticket updated successfully!", "success");
+      }
+    } finally {
+      setIsEditing(false);
+    }
+  };
+
+  const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push("/login");
   };
@@ -433,6 +674,41 @@ export default function AllTicketsAdmin() {
 
   return (
     <div className="flex min-h-screen bg-[#f8f9fc] text-[#1a2744] font-sans">
+
+      {/* ── LOGOUT CONFIRMATION MODAL ── */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 transition-opacity" style={{ background: "rgba(26, 39, 68, 0.4)", backdropFilter: "blur(2px)" }} onClick={() => setShowLogoutConfirm(false)} />
+          <div
+            className="relative bg-white rounded-2xl p-6 sm:p-8 w-full max-w-sm flex flex-col gap-4 shadow-2xl animate-fade-in-up"
+            style={{ border: "1px solid #e8ecf2" }}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "rgba(220, 38, 38, 0.1)", color: "#dc2626" }}>
+                <LogOut size={20} />
+              </div>
+              <h2 className="text-lg font-bold" style={{ color: "#1a2744" }}>Confirm Logout</h2>
+            </div>
+            <p className="text-sm" style={{ color: "#6b7fa3" }}>Are you sure on logging out? You will need to login again to access your account</p>
+            <div className="flex items-center justify-end gap-2.5 mt-2">
+              <button
+                className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-opacity-80 hover:scale-103 active:scale-95"
+                style={{ background: "#f0f3f8", color: "#6b7fa3" }}
+                onClick={() => setShowLogoutConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 hover:scale-103 active:scale-95"
+                style={{ background: "#dc2626", boxShadow: "0 4px 12px rgba(220, 38, 38, 0.25)" }}
+                onClick={handleLogout}
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* SIDEBAR */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#e8ecf2] transform transition-transform duration-300 ease-in-out ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:relative lg:translate-x-0`}>
@@ -449,15 +725,15 @@ export default function AllTicketsAdmin() {
 
           <nav className="flex-1 space-y-2">
             <NavItem icon={<LayoutDashboard size={18} />} label="Analytics" onClick={() => router.push("/admin")} />
-            <NavItem icon={<Ticket size={18} />} label="All Tickets" active onClick={() => { }} />
+            <NavItem icon={<Ticket size={18} />} label="All Tickets" onClick={() => router.push("/admin/tickets")} />
             <NavItem icon={<Activity size={18} />} label="Request" onClick={() => router.push("/admin/requests")} />
-            <NavItem icon={<CheckSquare size={18} />} label="Pick up" onClick={() => router.push("/admin/pickups")} />
+            <NavItem icon={<CheckSquare size={18} />} label="Pick up" active onClick={() => { }} />
 
           </nav>
 
           <div className="mt-auto pt-6 border-t border-[#e8ecf2]">
             <button
-              onClick={() => setShowLogoutModal(true)}
+              onClick={() => setShowLogoutConfirm(true)}
               className="flex items-center gap-3 w-full p-3 rounded-xl text-red-500 font-bold text-sm hover:bg-red-50 transition-all active:scale-95"
             >
               <LogOut size={18} /> Logout
@@ -469,73 +745,59 @@ export default function AllTicketsAdmin() {
       {/* MAIN CONTENT */}
       <main className="flex-1 overflow-x-hidden relative flex flex-col h-screen">
 
-        {/* TOP BAR */}
-        <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-[#e8ecf2] px-4 sm:px-8 py-4 flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-4">
-            <button className="lg:hidden p-2 rounded-lg hover:bg-gray-100" onClick={() => setSidebarOpen(!sidebarOpen)}>
-              {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
-            </button>
-            <h2 className="text-xl font-bold text-[#1a2744]">Ticket Inventory</h2>
+        {/* REQUESTS TOP BAR - REDESIGNED */}
+        <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-[#e8ecf2] px-4 sm:px-8 py-4 flex flex-col gap-4 flex-shrink-0">
+          {/* Top row: Title and icons */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button className="lg:hidden p-2 rounded-lg hover:bg-gray-100" onClick={() => setSidebarOpen(!sidebarOpen)}>
+                {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+              </button>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-bold text-[#1a2744]">My Tickets</h2>
+
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+
+
+              <div className="flex flex-col items-start px-3 py-1">
+                <span className="text-sm font-semibold text-[#1a2744]">Admin</span>
+                <span className="text-xs text-[#8c9bba]">{adminEmail}</span>
+              </div>
+            </div>
           </div>
 
-          <div className="flex items-center gap-4">
-
-
-            <div className="flex flex-col items-start px-3 py-1">
-              <span className="text-sm font-semibold text-[#1a2744]">Admin</span>
-              <span className="text-xs text-[#8c9bba]">{adminEmail}</span>
+          {/* Action Toolbar row */}
+          <div className="flex flex-wrap items-center justify-between gap-4 animate-fade-in-up">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handleRestore}
+                className="flex items-center gap-2 bg-[#1a2744] text-white hover:bg-[#0e12ffff] px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 shadow-lg"
+              >
+                <RefreshCcw size={14} />
+                <span>Restore</span>
+              </button>
+              <button
+                onClick={handleMarkResolved}
+                className="flex items-center gap-2 bg-white border border-[#e8ecf2] text-[#1a2744] hover:bg-[#f0f3f8] px-4 py-2 rounded-full text-xs font-semibold transition-all active:scale-95 shadow-sm"
+              >
+                <CheckCircle2 size={13} />
+                <span>Mark as Resolved</span>
+              </button>
+              <button
+                onClick={bulkClose}
+                className="flex items-center gap-2 bg-white border border-[#e8ecf2] text-[#1a2744] hover:bg-[#f0f3f8] px-4 py-2 rounded-full text-xs font-semibold transition-all active:scale-95 shadow-sm"
+              >
+                <X size={13} />
+                <span>Close</span>
+              </button>
             </div>
+
+
           </div>
         </header>
-
-        {/* SUMMARY STATS */}
-        <div className="p-4 sm:p-8 grid grid-cols-2 lg:grid-cols-5 gap-4 animate-fade-in-up">
-          <MetricStat label="Open" value={stats.open} color="#1a2744" onClick={() => setFilterStatus("Open")} />
-          <MetricStat label="In Progress" value={stats.inProgress} color="#1a2744" onClick={() => setFilterStatus("In Progress")} />
-          <MetricStat label="On Hold" value={stats.onHold} color="#1a2744" onClick={() => setFilterStatus("On Hold")} />
-          <MetricStat label="Resolved" value={stats.resolved} color="#1a2744" onClick={() => setFilterStatus("Resolved")} />
-          <MetricStat label="Closed" value={stats.closed} color="#1a2744" onClick={() => setFilterStatus("Closed")} />
-        </div>
-
-        {/* FILTERS & SEARCH */}
-        <div className="p-4 sm:p-8 bg-white border-b border-[#e8ecf2] flex-shrink-0 animate-fade-in-up">
-          <div className="flex flex-col xl:flex-row gap-4 xl:items-center justify-between">
-            <div className="flex flex-wrap gap-3">
-              <FilterDropdown
-                label="Status'"
-                value={filterStatus}
-                onChange={setFilterStatus}
-                options={STATUSES}
-                icon={<Activity size={14} />}
-              />
-              <FilterDropdown
-                label="Priority'"
-                value={filterPriority}
-                onChange={setFilterPriority}
-                options={PRIORITIES}
-                icon={<AlertCircle size={14} />}
-              />
-              <FilterDropdown
-                label="Assigned To"
-                value={filterStaff}
-                onChange={setFilterStaff}
-                options={staff.map(s => ({ value: s.id, label: s.full_name }))}
-                icon={<UserIcon size={14} />}
-              />
-            </div>
-
-            <div className="relative w-full xl:w-96 group">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-[#8c9bba] group-focus-within:text-[#1a2744] transition-colors" size={18} />
-              <input
-                type="text"
-                placeholder="Search any column..."
-                className="w-full pl-12 pr-4 py-3 bg-[#f8f9fc] border border-[#e8ecf2] rounded-2xl outline-none text-sm font-medium focus:bg-white focus:border-[#1a2744] focus:ring-4 focus:ring-indigo-100 transition-all shadow-sm"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
 
         {/* DATA TABLE */}
         <div className="flex-1 overflow-auto p-4 sm:p-8 scrollbar-thin animate-fade-in-up" style={{ animationDelay: "100ms" }}>
@@ -587,7 +849,7 @@ export default function AllTicketsAdmin() {
                   </tr>
                 ) : (
                   filteredTickets.map(t => (
-                    <tr key={t.id} className={`group hover:bg-[#f8f9fc]/80 transition-all ${selectedTickets.has(String(t.id)) ? 'bg-indigo-50/30' : ''}`} >
+                    <tr key={t.id} className={`group hover:bg-[#f8f9fc]/80 transition-all ${selectedTickets.has(String(t.id)) ? 'bg-indigo-50/30' : ''}`}>
                       <td className="pl-8 py-5">
                         <input
                           type="checkbox"
@@ -672,8 +934,15 @@ export default function AllTicketsAdmin() {
                         {/* Quick Assign Removed */}
 
                         <button
+                          onClick={() => handleUpdateStatus(t.id, t.status === "Resolved" ? "Open" : "Resolved")}
+                          className={`p-2 rounded-xl transition-all ${t.status === "Resolved" ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-gray-100 text-gray-400 hover:text-emerald-500 hover:bg-emerald-50"}`}
+                          title={t.status === "Resolved" ? "Undo Resolve" : "Mark as Resolved"}
+                        >
+                          <CheckSquare size={16} />
+                        </button>
+
+                        <button
                           onClick={() => {
-                            if (t.status === "Closed") { showToast("Cannot delete closed tickets", "error"); return; }
                             setTicketToDelete(t.id);
                             setShowDeleteModal(true);
                           }}
@@ -682,16 +951,6 @@ export default function AllTicketsAdmin() {
                         >
                           <Trash2 size={16} />
                         </button>
-
-                        {t.status !== "Closed" && (
-                          <button
-                            onClick={() => handleUpdateStatus(t.id, t.status === "Resolved" ? "Open" : "Resolved")}
-                            className={`p-2 rounded-xl transition-all ${t.status === "Resolved" ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-gray-100 text-gray-400 hover:text-emerald-500 hover:bg-emerald-50"}`}
-                            title={t.status === "Resolved" ? "Undo Resolve" : "Mark as Resolved"}
-                          >
-                            <CheckSquare size={16} />
-                          </button>
-                        )}
 
                         <button
                           onClick={() => router.push(`/admin/tickets/${t.id}`)}
@@ -720,37 +979,13 @@ export default function AllTicketsAdmin() {
               </div>
 
               <div className="flex items-center gap-4">
-                <div className="relative">
-                  <button
-                    onClick={() => setShowBulkAssign(!showBulkAssign)}
-                    className="flex items-center gap-2 px-6 py-2 rounded-xl bg-white/10 hover:bg-white text-xs font-bold transition-all hover:text-[#1a2744]"
-                  >
-                    <UserPlus size={16} />
-                    Assign to...
-                  </button>
-                  {showBulkAssign && (
-                    <div className="absolute bottom-full left-0 mb-2 w-56 bg-white rounded-2xl shadow-2xl p-2 animate-fade-in-up">
-                      <p className="px-4 py-2 text-[10px] uppercase font-black tracking-widest text-[#8c9bba] border-b border-[#f0f3f8] mb-1">Select Technician</p>
-                      {staff.map(s => (
-                        <button
-                          key={s.id}
-                          onClick={() => { bulkAssign(s.id); setShowBulkAssign(false); }}
-                          className="w-full text-left px-4 py-2 rounded-xl text-xs font-bold text-[#1a2744] hover:bg-[#f8f9fc] transition-colors"
-                        >
-                          {s.full_name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
                 <button
-                  onClick={bulkClose}
+                  onClick={handleRestore}
                   className="flex items-center gap-2 px-6 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-xs font-bold transition-all"
                 >
-                  <CheckSquare size={16} />
-                  Close Selected
+                  <RefreshCcw size={16} />
+                  Restore Selected
                 </button>
-
 
                 <button
                   onClick={() => setSelectedTickets(new Set())}
@@ -758,6 +993,253 @@ export default function AllTicketsAdmin() {
                 >
                   <X size={20} />
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* EDIT TICKET FLOATING PANEL */}
+        {showEditModal && (
+          <>
+            {/* Backdrop */}
+            <div
+              className="fixed inset-0 z-[99] bg-black/20 backdrop-blur-[2px]"
+              onClick={() => setShowEditModal(false)}
+            />
+            {/* Floating Panel */}
+            <div className="fixed top-0 right-0 h-full z-[100] w-full max-w-md flex flex-col bg-white shadow-2xl border-l border-[#e8ecf2] animate-slide-in-right">
+              {/* Header */}
+              <div className="flex items-center justify-between px-8 py-6 border-b border-[#f0f3f8] bg-gradient-to-r from-[#1a2744] to-[#253560]">
+                <div>
+                  <h2 className="text-lg font-black text-white tracking-tight">Edit Ticket</h2>
+                  <p className="text-[11px] text-[#8fa0c8] mt-0.5 font-medium">Modify title &amp; description</p>
+                </div>
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Accent bar */}
+              <div className="h-1 w-full bg-gradient-to-r from-[#e91e1e] via-[#1a2744] to-[#0e12ff]" />
+
+              {/* Body */}
+              <form onSubmit={handleEditSubmit} className="flex flex-col flex-1 overflow-y-auto px-8 py-8 gap-6">
+
+                {/* Ticket ID badge */}
+                <div className="inline-flex items-center gap-2 bg-[#f0f3f8] text-[#1a2744] text-[11px] font-black uppercase tracking-widest px-3 py-1.5 rounded-full border border-[#e8ecf2] w-fit">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#1a2744] inline-block" />
+                  Ticket ID-{editTicketId}
+                </div>
+
+                {/* Title field */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-[11px] font-black uppercase tracking-widest text-[#8c9bba]">
+                    Ticket Title <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editTitle}
+                    disabled={isEditing}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    required
+                    placeholder="Enter ticket title..."
+                    className="w-full px-4 py-3.5 rounded-2xl outline-none text-sm font-semibold bg-[#f8f9fc] text-[#1a2744] border border-[#e8ecf2] focus:border-indigo-400 focus:bg-white focus:shadow-[0_0_0_4px_rgba(99,102,241,0.1)] transition-all placeholder:text-[#c0cad9] disabled:opacity-60"
+                  />
+                </div>
+
+                {/* Description field */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-[11px] font-black uppercase tracking-widest text-[#8c9bba]">
+                    Description <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    value={editDescription}
+                    disabled={isEditing}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    required
+                    placeholder="Describe the issue in detail..."
+                    className="w-full px-4 py-3.5 rounded-2xl outline-none text-sm font-semibold bg-[#f8f9fc] text-[#1a2744] border border-[#e8ecf2] focus:border-indigo-400 focus:bg-white focus:shadow-[0_0_0_4px_rgba(99,102,241,0.1)] transition-all placeholder:text-[#c0cad9] disabled:opacity-60 min-h-[200px] resize-none"
+                  />
+                  <p className="text-[10px] text-[#8c9bba] font-medium">{editDescription.length} characters</p>
+                </div>
+
+                {/* Spacer */}
+                <div className="flex-1" />
+
+                {/* Actions */}
+                <div className="flex gap-3 pt-4 border-t border-[#f0f3f8]">
+                  <button
+                    type="button"
+                    onClick={() => setShowEditModal(false)}
+                    disabled={isEditing}
+                    className="flex-1 px-4 py-3 rounded-2xl text-sm font-bold text-[#1a2744] bg-[#f0f3f8] hover:bg-[#e8ecf2] transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isEditing}
+                    className="flex-1 px-4 py-3 rounded-2xl text-sm font-bold text-white bg-[#1a2744] hover:bg-indigo-700 transition-all active:scale-95 shadow-lg shadow-indigo-100 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isEditing ? <Loader2 size={16} className="animate-spin" /> : <CheckSquare size={16} />}
+                    {isEditing ? "Saving..." : "Save Changes"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </>
+        )}
+
+        {/* NEW INCIDENT MODAL */}
+        {isModalOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#f8f9fc]/90 backdrop-blur-sm animate-fade-in">
+            <div className="bg-[#f8f9fc] rounded-[2rem] w-full max-w-3xl max-h-[95vh] overflow-y-auto shadow-2xl border border-[#e8ecf2] relative flex flex-col">
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="absolute top-8 right-8 p-2 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-500 transition-colors z-10"
+              >
+                <X size={20} />
+              </button>
+
+              <div className="p-8 pb-4">
+                <h2 className="text-[28px] font-bold text-[#1a2744]">Create a New Ticket</h2>
+                <p className="text-[#6b7fa3] text-sm mt-1">Fill out the details below to submit a new service request. We will review it shortly.</p>
+              </div>
+
+              <div className="p-8 pt-4">
+                <form onSubmit={handleCreateIncident} className="bg-white rounded-[2rem] p-6 sm:p-8 shadow-sm border border-[#e8ecf2] flex flex-col relative overflow-hidden group">
+                  <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-[#e91e1eff] via-[#1a2744] to-[#0e12ffff] opacity-80" />
+
+                  {modalError && (
+                    <div className="mb-6 text-sm p-4 rounded-xl bg-red-50 text-red-600 border border-red-200 flex items-center gap-2">
+                      <CircleDot size={18} />
+                      {modalError}
+                    </div>
+                  )}
+
+                  {modalSuccess && (
+                    <div className="mb-6 text-sm p-4 rounded-xl bg-green-50 text-emerald-700 border border-emerald-200 flex items-center gap-2">
+                      <CheckCircle2 size={18} />
+                      {modalSuccess}
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-6">
+                    <div className="flex flex-col">
+                      <label className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider mb-2 text-[#8c9bba]">
+                        Ticket Title <span className="text-[#e91e1eff]">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={modalTitle}
+                        disabled={modalSubmitting}
+                        onChange={(e) => setModalTitle(e.target.value)}
+                        placeholder="Summarize the issue briefly"
+                        required
+                        className="w-full p-4 rounded-2xl outline-none transition-all text-sm font-medium bg-[#f8f9fc] text-[#1a2744] border border-[#e8ecf2] focus:border-[#0e12ffff] focus:bg-white focus:shadow-[0_0_0_4px_rgba(14,18,255,0.1)]"
+                      />
+                    </div>
+
+                    <div className="flex flex-col">
+                      <label className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider mb-2 text-[#8c9bba]">
+                        Issue Category <span className="text-[#e91e1eff]">*</span>
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={modalCategory}
+                          disabled={modalSubmitting}
+                          onChange={(e) => setModalCategory(e.target.value)}
+                          required
+                          className="w-full p-4 appearance-none rounded-2xl outline-none transition-all text-sm font-medium bg-[#f8f9fc] text-[#1a2744] border border-[#e8ecf2] focus:border-[#0e12ffff] focus:bg-white focus:shadow-[0_0_0_4px_rgba(14,18,255,0.1)] cursor-pointer"
+                        >
+                          <option value="" disabled>Select Expertise Required</option>
+                          <option value="Hardware">Hardware (WiFi, Computer Parts)</option>
+                          <option value="Software">Software (Office Systems, Apps)</option>
+                          <option value="Networking">Networking (Troubleshooting, Config)</option>
+                        </select>
+                        <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-[#8c9bba] pointer-events-none" />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col">
+                      <label className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider mb-2 text-[#8c9bba]">
+                        Request Mode <span className="text-[#e91e1eff]">*</span>
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={modalMode}
+                          disabled={modalSubmitting}
+                          onChange={(e) => setModalMode(e.target.value)}
+                          required
+                          className="w-full p-4 appearance-none rounded-2xl outline-none transition-all text-sm font-medium bg-[#f8f9fc] text-[#1a2744] border border-[#e8ecf2] focus:border-[#0e12ffff] focus:bg-white focus:shadow-[0_0_0_4px_rgba(14,18,255,0.1)] cursor-pointer"
+                        >
+                          <option value="Self-Service Portal">Self-Service Portal</option>
+                          <option value="Email">Email</option>
+                          <option value="Assigned by Staff">Assigned by Staff</option>
+                          <option value="Request Letter">Request Letter</option>
+                          <option value="Walk-in">Walk-in</option>
+                          <option value="Phone Call/Text">Phone Call/Text</option>
+                        </select>
+                        <ChevronDown size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-[#8c9bba] pointer-events-none" />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col">
+                      <label className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider mb-2 text-[#8c9bba]">
+                        Request Type
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value="Incident"
+                          disabled
+                          className="w-full p-4 appearance-none rounded-2xl outline-none transition-all text-black text-sm font-medium bg-[#DDD9F9] border border-[#e8ecf2] cursor-not-allowed"
+                        />
+                        <AlertTriangle size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-black opacity-60 pointer-events-none" />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col">
+                      <label className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider mb-2 text-[#8c9bba]">
+                        Current Status
+                      </label>
+                      <div className="relative">
+                        <select disabled className="w-full p-4 appearance-none rounded-2xl outline-none transition-all text-black text-sm font-medium bg-[#DDD9F9] border border-[#e8ecf2] cursor-not-allowed">
+                          <option value="Open">Open</option>
+                        </select>
+                        <CircleDot size={18} className="absolute right-4 top-1/2 -translate-y-1/2 text-black opacity-60 pointer-events-none" />
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col">
+                      <label className="text-[11px] sm:text-xs font-semibold uppercase tracking-wider mb-2 text-[#8c9bba]">
+                        Detailed Description <span className="text-[#e91e1eff]">*</span>
+                      </label>
+                      <textarea
+                        value={modalDescription}
+                        disabled={modalSubmitting}
+                        onChange={(e) => setModalDescription(e.target.value)}
+                        placeholder="Provide any additional context or steps to reproduce..."
+                        required
+                        className="w-full p-4 rounded-2xl outline-none transition-all text-sm font-medium bg-[#f8f9fc] text-[#1a2744] border border-[#e8ecf2] focus:border-[#0e12ffff] focus:bg-white focus:shadow-[0_0_0_4px_rgba(14,18,255,0.1)] min-h-[160px] resize-y"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-8 flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={modalSubmitting}
+                      className="px-8 py-4 rounded-2xl bg-[#1a2744] text-white text-sm font-bold hover:bg-[#0e12ffff] transition-all active:scale-95 shadow-lg shadow-indigo-100 disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {modalSubmitting ? <Loader2 size={18} className="animate-spin" /> : <Plus size={18} />}
+                      Submit Incident
+                    </button>
+                  </div>
+                </form>
               </div>
             </div>
           </div>
@@ -793,36 +1275,34 @@ export default function AllTicketsAdmin() {
             </div>
           </div>
         )}
-      </main>
 
-      {/* LOGOUT CONFIRMATION MODAL */}
-      {showLogoutModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-[#1a2744]/40 backdrop-blur-sm animate-fade-in">
-          <div className="bg-white p-6 rounded-3xl shadow-2xl max-w-sm w-full animate-fade-in-up">
-            <div className="w-12 h-12 rounded-full bg-red-50 text-red-500 flex items-center justify-center mb-4 mx-auto">
-              <LogOut size={24} />
+        {/* TOAST NOTIFICATION */}
+        {toast && (
+          <div className={`fixed bottom-8 right-8 z-[200] flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl border animate-toast max-w-sm
+            ${toast.type === "success" ? "bg-emerald-50 border-emerald-200 text-emerald-800" : ""}
+            ${toast.type === "error"   ? "bg-red-50 border-red-200 text-red-800" : ""}
+            ${toast.type === "info"    ? "bg-indigo-50 border-indigo-200 text-indigo-800" : ""}
+          `}>
+            <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0
+              ${toast.type === "success" ? "bg-emerald-100" : ""}
+              ${toast.type === "error"   ? "bg-red-100" : ""}
+              ${toast.type === "info"    ? "bg-indigo-100" : ""}
+            `}>
+              {toast.type === "success" && <CheckCircle2 size={16} className="text-emerald-600" />}
+              {toast.type === "error"   && <AlertCircle  size={16} className="text-red-600" />}
+              {toast.type === "info"    && <AlertTriangle size={16} className="text-indigo-500" />}
             </div>
-            <h3 className="text-xl font-bold text-center text-[#1a2744] mb-2">Confirm Logout</h3>
-            <p className="text-sm text-[#8c9bba] text-center font-medium mb-6">
-              Are you sure you want to log out? You will need to sign in again to access the admin dashboard.
-            </p>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={() => setShowLogoutModal(false)}
-                className="flex-1 py-3 rounded-xl bg-[#f0f3f8] text-[#1a2744] font-bold text-sm hover:bg-[#e8ecf2] transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmLogout}
-                className="flex-1 py-3 rounded-xl bg-red-500 text-white font-bold text-sm hover:bg-red-600 transition-colors shadow-lg shadow-red-500/30"
-              >
-                Log Out
-              </button>
-            </div>
+            <p className="text-sm font-bold leading-snug flex-1">{toast.message}</p>
+            <button
+              onClick={() => setToast(null)}
+              className="p-1 rounded-lg hover:bg-black/5 transition-colors flex-shrink-0"
+            >
+              <X size={14} />
+            </button>
           </div>
-        </div>
-      )}
+        )}
+
+      </main>
     </div>
   );
 }

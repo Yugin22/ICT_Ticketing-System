@@ -117,6 +117,10 @@ export default function AllTicketsAdmin() {
   const [showBulkAssign, setShowBulkAssign] = useState(false);
   const [showToolbarAssign, setShowToolbarAssign] = useState(false);
   const [adminEmail, setAdminEmail] = useState<string>("");
+  const [adminId, setAdminId] = useState<string>("");
+
+  // Logout confirmation modal
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   // Toast notification
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
@@ -132,6 +136,7 @@ export default function AllTicketsAdmin() {
     const checkUser = async () => {
       const { data } = await supabase.auth.getUser();
       setAdminEmail(data.user?.email ?? "");
+      setAdminId(data.user?.id ?? "");
       if (!data.user) {
         router.push("/login");
         return;
@@ -255,6 +260,9 @@ export default function AllTicketsAdmin() {
 
   const filteredTickets = useMemo(() => {
     return tickets.filter(t => {
+      // Exclude tickets already picked up by this admin from Request view
+      if (adminId && t.assigned_to === adminId) return false;
+
       const s = search.toLowerCase();
       const matchesSearch = search === "" || (
         String(t.id).toLowerCase().includes(s) ||
@@ -428,11 +436,13 @@ export default function AllTicketsAdmin() {
 
   const bulkClose = async () => {
     if (selectedTickets.size === 0) {
-      showToast("Please select one ticket to close.", "info");
+      showToast("Please select at least one ticket to close.", "info");
       return;
     }
-    if (selectedTickets.size > 1) {
-      showToast("Please close tickets one at a time.", "info");
+    // Check if any selected ticket is already closed
+    const closedTickets = tickets.filter(t => selectedTickets.has(String(t.id)) && t.status?.toLowerCase() === "closed");
+    if (closedTickets.length > 0) {
+      showToast("Ticket already closed", "error");
       return;
     }
     try {
@@ -448,6 +458,43 @@ export default function AllTicketsAdmin() {
         showToast("Ticket closed successfully.", "success");
       } else {
         showToast(`Failed to close ticket: ${error.message}`, "error");
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handlePickUp = async () => {
+    if (selectedTickets.size === 0) {
+      showToast("Please select at least one ticket to pick up.", "info");
+      return;
+    }
+    
+    if (!adminId) {
+      showToast("User not authenticated", "error");
+      return;
+    }
+
+    // Prevent picking up tickets that are already closed
+    const closed = tickets.filter(t => selectedTickets.has(String(t.id)) && t.status?.toLowerCase() === "closed");
+    if (closed.length > 0) {
+      showToast("Cannot pick up closed tickets", "error");
+      return;
+    }
+
+    try {
+      setRefreshing(true);
+      const { error } = await supabase
+        .from("tickets")
+        .update({ assigned_to: adminId, status: "In Progress" })
+        .in("id", Array.from(selectedTickets));
+
+      if (error) {
+        showToast(`Failed to pick up tickets: ${error.message}`, "error");
+      } else {
+        await fetchTickets();
+        setSelectedTickets(new Set());
+        showToast("Tickets picked up successfully.", "success");
       }
     } finally {
       setRefreshing(false);
@@ -567,6 +614,11 @@ export default function AllTicketsAdmin() {
     }
     const ticketId = Array.from(selectedTickets)[0];
     const ticket = tickets.find(t => String(t.id) === String(ticketId));
+    // Prevent editing closed tickets
+    if (ticket?.status?.toLowerCase() === "closed") {
+      showToast("Cannot edit closed tickets", "error");
+      return;
+    }
     if (ticket) {
       setEditTicketId(ticket.id);
       setEditTitle(ticket.title || "");
@@ -608,6 +660,41 @@ export default function AllTicketsAdmin() {
   return (
     <div className="flex min-h-screen bg-[#f8f9fc] text-[#1a2744] font-sans">
 
+      {/* ── LOGOUT CONFIRMATION MODAL ── */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 transition-opacity" style={{ background: "rgba(26, 39, 68, 0.4)", backdropFilter: "blur(2px)" }} onClick={() => setShowLogoutConfirm(false)} />
+          <div
+            className="relative bg-white rounded-2xl p-6 sm:p-8 w-full max-w-sm flex flex-col gap-4 shadow-2xl animate-fade-in-up"
+            style={{ border: "1px solid #e8ecf2" }}
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: "rgba(220, 38, 38, 0.1)", color: "#dc2626" }}>
+                <LogOut size={20} />
+              </div>
+              <h2 className="text-lg font-bold" style={{ color: "#1a2744" }}>Confirm Logout</h2>
+            </div>
+            <p className="text-sm" style={{ color: "#6b7fa3" }}>Are you sure on logging out? You will need to login again to access your account</p>
+            <div className="flex items-center justify-end gap-2.5 mt-2">
+              <button
+                className="px-4 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-opacity-80 hover:scale-103 active:scale-95"
+                style={{ background: "#f0f3f8", color: "#6b7fa3" }}
+                onClick={() => setShowLogoutConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 hover:scale-103 active:scale-95"
+                style={{ background: "#dc2626", boxShadow: "0 4px 12px rgba(220, 38, 38, 0.25)" }}
+                onClick={handleLogout}
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* SIDEBAR */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-[#e8ecf2] transform transition-transform duration-300 ease-in-out ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} lg:relative lg:translate-x-0`}>
         <div className="p-6 flex flex-col h-full bg-gradient-to-b from-white to-[#f8f9fc]">
@@ -625,12 +712,13 @@ export default function AllTicketsAdmin() {
             <NavItem icon={<LayoutDashboard size={18} />} label="Analytics" onClick={() => router.push("/admin")} />
             <NavItem icon={<Ticket size={18} />} label="All Tickets" onClick={() => router.push("/admin/tickets")} />
             <NavItem icon={<Activity size={18} />} label="Request" active onClick={() => { }} />
+            <NavItem icon={<CheckSquare size={18} />} label="Pick up" onClick={() => router.push("/admin/pickups")} />
 
           </nav>
 
           <div className="mt-auto pt-6 border-t border-[#e8ecf2]">
             <button
-              onClick={handleLogout}
+              onClick={() => setShowLogoutConfirm(true)}
               className="flex items-center gap-3 w-full p-3 rounded-xl text-red-500 font-bold text-sm hover:bg-red-50 transition-all active:scale-95"
             >
               <LogOut size={18} /> Logout
@@ -680,14 +768,14 @@ export default function AllTicketsAdmin() {
 
               <div className="w-px h-6 bg-[#e8ecf2] mx-1"></div>
 
-              <button onClick={handleOpenEditModal} className="bg-[#f0f3f8] text-[#1a2744] hover:bg-[#e8ecf2] px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95">Edit</button>
-              <button className="bg-[#f0f3f8] text-[#1a2744] hover:bg-[#e8ecf2] px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95">Pick Up</button>
-              <button className="bg-[#f0f3f8] text-[#1a2744] hover:bg-[#e8ecf2] px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95" onClick={bulkClose}>Close</button>
+              <button onClick={handleOpenEditModal} className="flex items-center gap-2 bg-white border border-[#e8ecf2] text-[#1a2744] hover:bg-[#f0f3f8] px-4 py-2 rounded-full text-xs font-semibold transition-all active:scale-95 shadow-sm">Edit</button>
+              <button onClick={handlePickUp} className="flex items-center gap-2 bg-white border border-[#e8ecf2] text-[#1a2744] hover:bg-[#f0f3f8] px-4 py-2 rounded-full text-xs font-semibold transition-all active:scale-95 shadow-sm">Pick Up</button>
+              <button className="flex items-center gap-2 bg-white border border-[#e8ecf2] text-[#1a2744] hover:bg-[#f0f3f8] px-4 py-2 rounded-full text-xs font-semibold transition-all active:scale-95 shadow-sm" onClick={bulkClose}>Close</button>
               
               <div className="relative">
                 <button 
                   onClick={() => setShowToolbarAssign(!showToolbarAssign)}
-                  className="flex items-center gap-2 bg-[#f0f3f8] text-[#1a2744] hover:bg-[#e8ecf2] px-4 py-2 rounded-xl text-xs font-bold transition-all active:scale-95"
+                  className="flex items-center gap-2 bg-white border border-[#e8ecf2] text-[#1a2744] hover:bg-[#f0f3f8] px-4 py-2 rounded-full text-xs font-semibold transition-all active:scale-95 shadow-sm"
                 >
                   <span>Assign</span>
                   <ChevronDown size={14} className="text-[#8c9bba]" />
