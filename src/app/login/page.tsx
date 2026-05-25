@@ -86,7 +86,7 @@ export default function LoginPage() {
 
       // 🔀 ROLE-BASED REDIRECT
       if (profile?.role === "admin") {
-        router.replace("/admin");
+        router.replace("/verifying");
       } else {
         router.replace("/dashboard");
       }
