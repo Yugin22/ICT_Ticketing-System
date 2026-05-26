@@ -177,6 +177,21 @@ export default function PickupsAdmin() {
   const fetchTickets = async () => {
     try {
       setRefreshing(true);
+
+      // Auto-close resolved tickets older than 3 days
+      const threeDaysAgo = new Date();
+      threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+      
+      const { error: autoCloseError } = await supabase
+        .from("tickets")
+        .update({ status: "Closed" })
+        .eq("status", "Resolved")
+        .lte("updated_at", threeDaysAgo.toISOString());
+        
+      if (autoCloseError) {
+        console.warn("Auto-close skipped due to DB constraint (likely missing updated_at):", autoCloseError.message);
+      }
+
       // 1. Fetch tickets basic data
       const { data: ticketsData, error: ticketsError } = await supabase
         .from("tickets")
@@ -472,13 +487,37 @@ export default function PickupsAdmin() {
     
     try {
       setRefreshing(true);
-      const { error } = await supabase
-        .from("tickets")
-        .update({ assigned_to: null, status: "Open" })
-        .in("id", Array.from(selectedTickets));
+      
+      const keepStatusIds = Array.from(selectedTickets).filter(id => {
+        const t = tickets.find(ticket => String(ticket.id) === String(id));
+        return t?.status === "Closed" || t?.status === "Resolved";
+      });
+      const resetStatusIds = Array.from(selectedTickets).filter(id => {
+        const t = tickets.find(ticket => String(ticket.id) === String(id));
+        return t?.status !== "Closed" && t?.status !== "Resolved";
+      });
 
-      if (error) {
-        showToast(`Failed to restore tickets: ${error.message}`, "error");
+      let hasError = false;
+      let errMsg = "";
+
+      if (keepStatusIds.length > 0) {
+        const { error } = await supabase
+          .from("tickets")
+          .update({ assigned_to: null }) // keep status as is
+          .in("id", keepStatusIds);
+        if (error) { hasError = true; errMsg = error.message; }
+      }
+
+      if (resetStatusIds.length > 0) {
+        const { error } = await supabase
+          .from("tickets")
+          .update({ assigned_to: null, status: "Open" }) // set status to Open
+          .in("id", resetStatusIds);
+        if (error) { hasError = true; errMsg = error.message; }
+      }
+
+      if (hasError) {
+        showToast(`Failed to restore some tickets: ${errMsg}`, "error");
       } else {
         await fetchTickets();
         setSelectedTickets(new Set());
@@ -494,6 +533,14 @@ export default function PickupsAdmin() {
       showToast("Please select at least one ticket to mark as resolved.", "info");
       return;
     }
+    
+    // Check if any selected ticket is closed
+    const closedTickets = tickets.filter(t => selectedTickets.has(String(t.id)) && t.status?.toLowerCase() === "closed");
+    if (closedTickets.length > 0) {
+      showToast("Closed tickets cannot be modified.", "error");
+      return;
+    }
+
     // Check if any selected ticket is already resolved
     const resolvedTickets = tickets.filter(t => selectedTickets.has(String(t.id)) && t.status?.toLowerCase() === "resolved");
     if (resolvedTickets.length > 0) {
@@ -551,6 +598,11 @@ export default function PickupsAdmin() {
   };
 
   const handleUpdateStatus = async (ticketId: string | number, newStatus: string) => {
+    const ticket = tickets.find(t => t.id === ticketId);
+    if (ticket?.status === "Closed") {
+      showToast("Closed tickets cannot be modified.", "error");
+      return;
+    }
     try {
       setRefreshing(true);
       const { error } = await supabase
@@ -567,6 +619,11 @@ export default function PickupsAdmin() {
   };
 
   const handleUpdatePriority = async (ticketId: string | number, newPriority: string) => {
+    const ticket = tickets.find(t => t.id === ticketId);
+    if (ticket?.status === "Closed") {
+      showToast("Closed tickets cannot be modified.", "error");
+      return;
+    }
     try {
       setRefreshing(true);
       const { error } = await supabase
@@ -892,17 +949,19 @@ export default function PickupsAdmin() {
                             <div className={`w-1.5 h-1.5 rounded-full ${t.priority === 'Emergency' ? 'animate-pulse' : ''}`} style={{ background: "currentColor" }} />
                             {t.priority || "Medium"}
                           </button>
-                          <div className="absolute top-full left-0 mt-1 w-32 bg-white rounded-xl shadow-xl p-1.5 hidden group-hover/priority:block z-50 border border-[#e8ecf2] animate-fade-in-up">
-                            {PRIORITIES.map(p => (
-                              <button
-                                key={p}
-                                onClick={() => handleUpdatePriority(t.id, p)}
-                                className={`w-full text-left px-3 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${t.priority === p ? 'bg-[#f0f3f8] text-[#1a2744]' : 'text-[#6b7fa3] hover:bg-[#f8f9fc] hover:text-[#1a2744]'}`}
-                              >
-                                {p}
-                              </button>
-                            ))}
-                          </div>
+                          {t.status !== "Closed" && (
+                            <div className="absolute top-full left-0 mt-1 w-32 bg-white rounded-xl shadow-xl p-1.5 hidden group-hover/priority:block z-50 border border-[#e8ecf2] animate-fade-in-up">
+                              {PRIORITIES.map(p => (
+                                <button
+                                  key={p}
+                                  onClick={() => handleUpdatePriority(t.id, p)}
+                                  className={`w-full text-left px-3 py-1.5 rounded-lg text-[10px] font-bold transition-colors ${t.priority === p ? 'bg-[#f0f3f8] text-[#1a2744]' : 'text-[#6b7fa3] hover:bg-[#f8f9fc] hover:text-[#1a2744]'}`}
+                                >
+                                  {p}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-5">
@@ -933,13 +992,15 @@ export default function PickupsAdmin() {
                       <td className="pr-8 py-5 text-right flex items-center justify-end gap-2">
                         {/* Quick Assign Removed */}
 
-                        <button
-                          onClick={() => handleUpdateStatus(t.id, t.status === "Resolved" ? "Open" : "Resolved")}
-                          className={`p-2 rounded-xl transition-all ${t.status === "Resolved" ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-gray-100 text-gray-400 hover:text-emerald-500 hover:bg-emerald-50"}`}
-                          title={t.status === "Resolved" ? "Undo Resolve" : "Mark as Resolved"}
-                        >
-                          <CheckSquare size={16} />
-                        </button>
+                        {t.status !== "Closed" && (
+                          <button
+                            onClick={() => handleUpdateStatus(t.id, t.status === "Resolved" ? "In Progress" : "Resolved")}
+                            className={`p-2 rounded-xl transition-all ${t.status === "Resolved" ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-gray-100 text-gray-400 hover:text-emerald-500 hover:bg-emerald-50"}`}
+                            title={t.status === "Resolved" ? "Undo Resolve" : "Mark as Resolved"}
+                          >
+                            <CheckSquare size={16} />
+                          </button>
+                        )}
 
                         <button
                           onClick={() => {

@@ -598,11 +598,12 @@ export default function AdminTicketDetailPage({ params }: { params: Promise<{ id
                 <span className="text-[10px] font-bold text-[#8c9bba] uppercase tracking-widest">Reported</span>
                 <div className="flex items-center gap-2 text-sm font-bold text-[#1a2744]">
                   <Calendar size={14} className="text-[#8c9bba]" />
-                  {new Date(ticket.created_at).toLocaleDateString(undefined, {
-                    day: "2-digit",
-                    month: "short",
-                    year: "numeric",
-                  })}
+                  <span>
+                    {new Date(ticket.created_at).toLocaleDateString(undefined, { day: "2-digit", month: "short", year: "numeric" })}
+                  </span>
+                  <span className="text-xs text-[#8c9bba] font-medium">
+                    {new Date(ticket.created_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                  </span>
                 </div>
                 <span className="text-[10px] text-[#8c9bba]">{timeSince(ticket.created_at)}</span>
               </div>

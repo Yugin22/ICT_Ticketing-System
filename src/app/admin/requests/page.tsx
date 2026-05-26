@@ -484,13 +484,37 @@ export default function AllTicketsAdmin() {
 
     try {
       setRefreshing(true);
-      const { error } = await supabase
-        .from("tickets")
-        .update({ assigned_to: adminId, status: "In Progress" })
-        .in("id", Array.from(selectedTickets));
 
-      if (error) {
-        showToast(`Failed to pick up tickets: ${error.message}`, "error");
+      const keepStatusIds = Array.from(selectedTickets).filter(id => {
+        const t = tickets.find(ticket => String(ticket.id) === String(id));
+        return t?.status === "Closed" || t?.status === "Resolved";
+      });
+      const updateStatusIds = Array.from(selectedTickets).filter(id => {
+        const t = tickets.find(ticket => String(ticket.id) === String(id));
+        return t?.status !== "Closed" && t?.status !== "Resolved";
+      });
+
+      let hasError = false;
+      let errMsg = "";
+
+      if (keepStatusIds.length > 0) {
+        const { error } = await supabase
+          .from("tickets")
+          .update({ assigned_to: adminId })
+          .in("id", keepStatusIds);
+        if (error) { hasError = true; errMsg = error.message; }
+      }
+
+      if (updateStatusIds.length > 0) {
+        const { error } = await supabase
+          .from("tickets")
+          .update({ assigned_to: adminId, status: "In Progress" })
+          .in("id", updateStatusIds);
+        if (error) { hasError = true; errMsg = error.message; }
+      }
+
+      if (hasError) {
+        showToast(`Failed to pick up some tickets: ${errMsg}`, "error");
       } else {
         await fetchTickets();
         setSelectedTickets(new Set());
@@ -502,20 +526,23 @@ export default function AllTicketsAdmin() {
   };
 
   const handleAssignTicket = async (ticketId: string | number, staffId: string) => {
+    const t = tickets.find(ticket => String(ticket.id) === String(ticketId));
+    const newStatus = (t?.status === "Resolved" || t?.status === "Closed") ? t.status : "In Progress";
+
     try {
       setRefreshing(true);
       const { error } = await supabase
         .from("tickets")
-        .update({ assigned_to: staffId, status: "In Progress" })
+        .update({ assigned_to: staffId, status: newStatus })
         .eq("id", ticketId);
 
       if (error && error.code === 'PGRST204' && error.message.includes('assigned_to')) {
         console.warn("Database schema missing 'assigned_to' column. Retrying save without assignment.");
-        alert("Warning: The 'assigned_to' column is missing from your Supabase database schema. Ticket status was updated to 'In Progress', but technician assignment was skipped. Please add the 'assigned_to' column as a UUID type to enable this feature.");
+        alert("Warning: The 'assigned_to' column is missing from your Supabase database schema. Ticket status was updated, but technician assignment was skipped. Please add the 'assigned_to' column as a UUID type to enable this feature.");
 
         const { error: retryError } = await supabase
           .from("tickets")
-          .update({ status: "In Progress" })
+          .update({ status: newStatus })
           .eq("id", ticketId);
 
         if (!retryError) await fetchTickets();

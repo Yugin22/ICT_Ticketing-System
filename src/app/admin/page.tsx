@@ -831,7 +831,12 @@ const [recentMessage, setRecentMessage] = useState<{ senderName: string; ticketI
                           </div>
                         </td>
                         <td className="text-sm font-medium text-[#6b7fa3]">
-                          {new Date(t.created_at).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}
+                          <div className="flex flex-col">
+                            <span>{new Date(t.created_at).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                            <span className="text-[11px] text-[#8c9bba]">
+                              {new Date(t.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
                         </td>
                         <td className="pr-8 text-right">
                           <button
