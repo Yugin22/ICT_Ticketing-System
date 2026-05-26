@@ -66,8 +66,9 @@ export default function UpdatePasswordPage() {
           setHasSession(true);
           window.history.replaceState({}, document.title, window.location.pathname);
         }
-      } else {
-        setDebugInfo(prev => prev + "No tokens found in URL upon load.\n");
+      } else if (accessToken) {
+        setDebugInfo(prev => prev + "Access token present without refresh token. Cannot set session.\n");
+        setErrorMsg("Refresh token missing. Please request a new password reset link.");
       }
     };
 
